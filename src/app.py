@@ -48,6 +48,7 @@ class MapleLabelWindow(QMainWindow):
         self.setGeometry(100, 100, 1200, 800)
         # 图标管理器
         self.icon_manager = IconManager()
+        self.setWindowIcon(self.icon_manager.get_icon("logo", 64))
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         self.main_layout = QHBoxLayout(main_widget)
@@ -191,6 +192,9 @@ class MapleLabelWindow(QMainWindow):
         # 添加快捷键
         self.create_shortcuts()
 
+        # 创建 AI 悬浮面板
+        self.create_ai_panel()
+
         # 绑定场景选择变化，用于更新属性面板
         self.canvas.scene.selectionChanged.connect(self.on_selection_changed)
 
@@ -312,7 +316,7 @@ class MapleLabelWindow(QMainWindow):
         self.autosave_shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
         self.autosave_shortcut.activated.connect(self.auto_save)
 
-        self.fit_view_shortcut = QShortcut(Qt.Key_Z, self)  # 将 Qt.Key_Space 改为 Qt.Key_Z
+        self.fit_view_shortcut = QShortcut(Qt.Key_F, self)
         self.fit_view_shortcut.activated.connect(lambda: self.canvas.fit_to_view())
 
         # 撤销/重做快捷键
@@ -328,6 +332,59 @@ class MapleLabelWindow(QMainWindow):
             shortcut.activated.connect(
                 lambda t=tool_name: self.activate_tool_by_shortcut(t)
             )
+
+    def create_ai_panel(self) -> None:
+        """创建 AI 悬浮面板，内容暂为空占位。"""
+        self.ai_panel = QWidget(self, Qt.Tool)
+        self.ai_panel.setWindowTitle("AI 面板")
+        self.ai_panel.setAttribute(Qt.WA_DeleteOnClose, False)
+        self.ai_panel.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        self.ai_panel.setFixedSize(360, 220)
+
+        layout = QVBoxLayout(self.ai_panel)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        header_layout = QHBoxLayout()
+        header_label = QLabel("AI 工具")
+        header_label.setStyleSheet("color: #D4D4D4; font-weight: bold;")
+        close_btn = QToolButton()
+        close_btn.setText("X")
+        close_btn.setToolTip("关闭")
+        close_btn.clicked.connect(self.ai_panel.hide)
+
+        header_layout.addWidget(header_label)
+        header_layout.addStretch()
+        header_layout.addWidget(close_btn)
+
+        body_label = QLabel("0")
+        body_label.setAlignment(Qt.AlignCenter)
+        body_label.setStyleSheet("color: #D4D4D4; font-size: 24px;")
+
+        layout.addLayout(header_layout)
+        layout.addStretch()
+        layout.addWidget(body_label)
+        layout.addStretch()
+
+        self.ai_panel.hide()
+
+    def toggle_ai_panel(self) -> None:
+        """显示或隐藏 AI 悬浮面板。"""
+        if not hasattr(self, "ai_panel") or self.ai_panel is None:
+            self.create_ai_panel()
+
+        if self.ai_panel.isVisible():
+            self.ai_panel.hide()
+            return
+
+        main_geo = self.geometry()
+        panel_geo = self.ai_panel.frameGeometry()
+        x = main_geo.x() + (main_geo.width() - panel_geo.width()) // 2
+        y = main_geo.y() + 80
+        self.ai_panel.move(x, y)
+        self.ai_panel.show()
+        self.ai_panel.raise_()
+        self.ai_panel.activateWindow()
 
     def undo(self) -> None:
         """执行撤销操作并显示状态。"""
@@ -591,7 +648,14 @@ class MapleLabelWindow(QMainWindow):
                 "name": "fit_view",
                 "text": "适应画布",
                 "icon": "fit_view",
-                "shortcut": "Z",
+                "shortcut": "F",
+                "checkable": False,
+            },
+            {
+                "name": "ai_panel",
+                "text": "AI",
+                "icon": "ai",
+                "shortcut": "",
                 "checkable": False,
             },
         ]
@@ -686,6 +750,9 @@ class MapleLabelWindow(QMainWindow):
                 btn.clicked.connect(self.load_next_image)
             elif tool["name"] == "fit_view":
                 btn.clicked.connect(lambda: self.canvas.fit_to_view())
+            elif tool["name"] == "ai_panel":
+                btn.clicked.connect(self.toggle_ai_panel)
+                self.ai_button = btn
             else:
                 btn.clicked.connect(self.on_tool_selected)
 

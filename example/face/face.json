@@ -1,0 +1,114 @@
+{
+  "version": "4.5.6",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "rect",
+      "points": [
+        [
+          209.2107101280559,
+          55.43189755529686
+        ],
+        [
+          301.5972060535506,
+          146.6263096623981
+        ]
+      ],
+      "group_id": 1,
+      "shape_type": "rectangle",
+      "attrs": {},
+      "flags": {},
+      "description": "",
+      "mask": null
+    },
+    {
+      "label": "point",
+      "points": [
+        [
+          227.68800931315482,
+          106.69150174621653
+        ]
+      ],
+      "group_id": 1,
+      "shape_type": "point",
+      "attrs": {
+        "point_type": "left_eye"
+      },
+      "flags": {},
+      "description": "",
+      "mask": null
+    },
+    {
+      "label": "point",
+      "points": [
+        [
+          273.58323632130384,
+          101.32712456344586
+        ]
+      ],
+      "group_id": 1,
+      "shape_type": "point",
+      "attrs": {
+        "point_type": "right_eye"
+      },
+      "flags": {},
+      "description": "",
+      "mask": null
+    },
+    {
+      "label": "point",
+      "points": [
+        [
+          243.7811408614668,
+          114.44004656577415
+        ]
+      ],
+      "group_id": 1,
+      "shape_type": "point",
+      "attrs": {
+        "point_type": "nose"
+      },
+      "flags": {},
+      "description": "",
+      "mask": null
+    },
+    {
+      "label": "point",
+      "points": [
+        [
+          240.20488940628638,
+          128.14901047729919
+        ]
+      ],
+      "group_id": 1,
+      "shape_type": "point",
+      "attrs": {
+        "point_type": "left_mouth"
+      },
+      "flags": {},
+      "description": "",
+      "mask": null
+    },
+    {
+      "label": "point",
+      "points": [
+        [
+          258.0861466821886,
+          126.9569266589057
+        ]
+      ],
+      "group_id": 1,
+      "shape_type": "point",
+      "attrs": {
+        "point_type": "right_mouth"
+      },
+      "flags": {},
+      "description": "",
+      "mask": null
+    }
+  ],
+  "imagePath": "face.jpg",
+  "imageData": null,
+  "imageHeight": 290,
+  "imageWidth": 512
+}

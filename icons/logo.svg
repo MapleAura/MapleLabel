@@ -1,0 +1,8 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 枫叶主体轮廓 -->
+  <path d="M100 20 L120 60 L180 70 L140 100 L160 160 L100 140 L40 160 L60 100 L20 70 L80 60 Z" stroke="white" stroke-width="4" fill="none"/>
+  <!-- 内部叶脉细节 -->
+  <path d="M100 40 L100 140 M100 100 L70 80 M100 100 L130 80 M80 120 L60 100 M120 120 L140 100" stroke="white" stroke-width="2"/>
+  <!-- 新增的叶柄 -->
+  <path d="M100 140 L100 180" stroke="white" stroke-width="3" stroke-linecap="round"/>
+</svg>

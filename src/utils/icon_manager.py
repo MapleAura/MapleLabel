@@ -49,8 +49,9 @@ class IconManager:
             "undo": "undo.svg",
             "redo": "redo.svg",
             # 其他
-            "logo": "logo.png",
-            
+            "logo": "logo.svg",
+            "ai": "ai.svg",
+
         }
 
     def get_icon(self, icon_name, size=16):

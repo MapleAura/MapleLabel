@@ -1,0 +1,17 @@
+{
+    "version": "1.0",
+    "shapes": {
+        "rectangle": {
+            "face": []
+        },
+        "point": {
+            "point_type": [
+                "left_eye",
+                "right_eye",
+                "nose",
+                "left_mouth",
+                "right_mouth"
+            ]
+        }
+    }
+}
