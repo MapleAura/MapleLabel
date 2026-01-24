@@ -4,7 +4,8 @@ import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QStatusBar, QWidget, 
                               QVBoxLayout, QHBoxLayout, QToolButton, QButtonGroup,
                               QFrame, QLabel, QFileDialog, QListWidget, QListWidgetItem,
-                              QGraphicsView, QMenu, QMessageBox)
+                              QGraphicsView, QMenu, QMessageBox, QFormLayout, QComboBox,
+                              QSplitter, QTableWidget, QTableWidgetItem, QSizePolicy)
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon, QAction, QKeySequence, QShortcut
 
@@ -33,11 +34,17 @@ class MapleLabelWindow(QMainWindow):
         # 中心画布区域
         self.canvas = AnnotationView()
         self.canvas.setStyleSheet("background-color: #2D2D30;")
-        self.main_layout.addWidget(self.canvas, stretch=1)
+        # 使用 QSplitter 让右侧面板可调节宽度
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.addWidget(self.canvas)
         
-        # 右侧面板容器
-        self.right_panel = CollapsiblePanel("属性", position="right")
+        # 右侧面板容器（使用不可折叠的容器，允许通过 splitter 自由调整宽度）
+        self.right_panel = QFrame()
+        self.right_panel.setFrameShape(QFrame.NoFrame)
         self.right_panel.setStyleSheet("background-color: #252526;")
+        self.right_panel_layout = QVBoxLayout(self.right_panel)
+        self.right_panel_layout.setContentsMargins(0,0,0,0)
+        self.right_panel_layout.setSpacing(0)
         
         # 右上方面板 - 属性面板
         self.property_panel = QFrame()
@@ -55,6 +62,9 @@ class MapleLabelWindow(QMainWindow):
         self.property_panel.setFixedHeight(200)
         self.property_layout = QVBoxLayout(self.property_panel)
         self.property_layout.addWidget(QLabel("属性面板"))
+        # 表单布局用于展示选中项的属性
+        self.property_form = QFormLayout()
+        self.property_layout.addLayout(self.property_form)
         self.property_layout.addStretch()
         
         # 右下方面板 - 文件列表
@@ -73,9 +83,39 @@ class MapleLabelWindow(QMainWindow):
         self.file_layout.addWidget(QLabel("文件列表"))
         self.file_layout.addWidget(self.file_list)
         
-        self.right_panel.content_layout.addWidget(self.property_panel)
-        self.right_panel.content_layout.addWidget(self.file_panel)
-        self.main_layout.addWidget(self.right_panel)
+        # 新增中间只读元素信息面板（展示当前图像所有元素信息）
+        self.elements_panel = QFrame()
+        self.elements_panel.setFrameShape(QFrame.StyledPanel)
+        self.elements_panel.setStyleSheet("""
+            QFrame { background-color: #252526; }
+        """)
+        self.elements_layout = QVBoxLayout(self.elements_panel)
+        self.elements_layout.addWidget(QLabel("元素概览（只读）"))
+        self.elements_table = QTableWidget()
+        self.elements_table.setColumnCount(3)
+        self.elements_table.setHorizontalHeaderLabels(["类型", "坐标", "属性"])
+        self.elements_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.elements_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.elements_table.setStyleSheet("color: #D4D4D4;")
+        self.elements_table.horizontalHeader().setStretchLastSection(True)
+        self.elements_layout.addWidget(self.elements_table)
+
+        # 将三个面板按顺序加入右侧容器：属性 / 元素列表 / 文件列表
+        self.right_panel_layout.addWidget(self.property_panel)
+        self.right_panel_layout.addWidget(self.elements_panel)
+        self.right_panel_layout.addWidget(self.file_panel)
+
+        # 将右侧面板加入 splitter，并把 splitter 放到主布局
+        self.splitter.addWidget(self.right_panel)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 0)
+        self.main_layout.addWidget(self.splitter)
+
+        # 绑定场景变化以更新元素列表（changed 会频繁触发）
+        self.canvas.scene.changed.connect(self.update_elements_panel)
+
+        # 存储当前 elements 表格行对应的 scene item 引用
+        self.elements_row_items = []
         
         # 状态栏
         self.status_bar = QStatusBar()
@@ -87,6 +127,8 @@ class MapleLabelWindow(QMainWindow):
         self.current_image = None
         self.image_files = []
         self.current_image_index = -1
+        # label.json 配置
+        self.label_config = {}
         
         # 临时文件目录
         self.temp_dir = os.path.join(os.path.expanduser("~"), ".maplabel_temp")
@@ -96,6 +138,9 @@ class MapleLabelWindow(QMainWindow):
         
         # 添加快捷键
         self.create_shortcuts()
+
+        # 绑定场景选择变化，用于更新属性面板
+        self.canvas.scene.selectionChanged.connect(self.on_selection_changed)
         
     def closeEvent(self, event):
         """处理窗口关闭事件"""
@@ -498,6 +543,19 @@ class MapleLabelWindow(QMainWindow):
                 self.image_files.append(file)
         
         self.image_files.sort()
+
+        # 尝试读取目录下的 label.json
+        label_json_path = os.path.join(dir_path, 'label.json')
+        if os.path.exists(label_json_path):
+            try:
+                with open(label_json_path, 'r', encoding='utf-8') as f:
+                    self.label_config = json.load(f).get('shapes', {})
+                self.status_bar.showMessage(f"已加载属性配置: {label_json_path}")
+            except Exception as e:
+                print(f"解析 label.json 时出错: {e}")
+                self.label_config = {}
+        else:
+            self.label_config = {}
         
         for file in self.image_files:
             json_file = os.path.splitext(file)[0] + '.json'
@@ -546,6 +604,8 @@ class MapleLabelWindow(QMainWindow):
                     if self.canvas.load_annotations_from_json(json_path):
                         self.status_bar.showMessage(f"已加载标注: {os.path.basename(json_path)}")
             
+            # 更新右侧元素列表
+            self.update_elements_panel()
             return True
         else:
             self.status_bar.showMessage(f"无法加载图像: {file_path}")
@@ -691,3 +751,132 @@ class MapleLabelWindow(QMainWindow):
                 if widget and isinstance(widget, FileListWidgetItem):
                     widget.checkbox.setChecked(has_json or has_temp)
                     widget.set_temp_status(has_temp)
+
+    def on_selection_changed(self):
+        """场景选中项变化时更新属性面板"""
+        self.update_property_panel()
+        
+    
+
+    def update_property_panel(self):
+        """根据当前选中项在属性面板显示可编辑属性（下拉列表）"""
+        # 清除旧表单项
+        while self.property_form.rowCount() > 0:
+            # removeRow 会自动移除 widgets
+            self.property_form.removeRow(0)
+
+        selected = self.canvas.scene.selectedItems()
+        if not selected:
+            return
+
+        # 仅显示第一个选中项的属性
+        item = selected[0]
+
+        # 基本信息：类型与坐标
+        shape_type = getattr(item, 'shape_type', None)
+        # 兼容性：根据类判断类型
+        if not shape_type:
+            from .items import ResizableRectItem, PointItem, PolygonItem
+            if isinstance(item, ResizableRectItem):
+                shape_type = 'rectangle'
+            elif isinstance(item, PointItem):
+                shape_type = 'point'
+            else:
+                shape_type = 'polygon'
+
+        # 坐标展示（只读）
+        coords_label = QLabel(self._format_item_coords(item))
+        coords_label.setStyleSheet('color: #D4D4D4;')
+        self.property_form.addRow('坐标', coords_label)
+
+        # 从 label_config 中查找该类型的属性定义
+        attrs_def = self.label_config.get(shape_type, {})
+        # 属性定义示例: {"age": ["15","20"], "color": [..]}
+        # 获取当前属性值字典
+        cur_attrs = getattr(item, 'attributes', None)
+        if cur_attrs is None:
+            # 对 polygon 兼容 flags
+            cur_attrs = getattr(item, 'flags', {})
+
+        for attr_name, options in attrs_def.items():
+            combo = QComboBox()
+            combo.addItem('')
+            for opt in options:
+                combo.addItem(opt)
+
+            # 设置当前值
+            val = cur_attrs.get(attr_name, '') if isinstance(cur_attrs, dict) else ''
+            if val is not None and val != '':
+                idx = combo.findText(str(val))
+                if idx >= 0:
+                    combo.setCurrentIndex(idx + 1) if False else combo.setCurrentText(str(val))
+
+            def make_on_change(itm, name):
+                def _on_change(text):
+                    # 更新 item 属性字典
+                    if hasattr(itm, 'attributes'):
+                        if not hasattr(itm, 'attributes') or itm.attributes is None:
+                            itm.attributes = {}
+                        itm.attributes[name] = text
+                    else:
+                        # polygon 使用 flags
+                        if hasattr(itm, 'flags'):
+                            itm.flags[name] = text
+                        else:
+                            setattr(itm, 'attributes', {name: text})
+                    self.canvas.set_modified(True)
+                return _on_change
+
+            combo.currentTextChanged.connect(make_on_change(item, attr_name))
+            self.property_form.addRow(attr_name, combo)
+
+    def _format_item_coords(self, item):
+        """返回一个简单文本表示坐标的字符串"""
+        from .items import ResizableRectItem, PointItem, PolygonItem
+        if isinstance(item, ResizableRectItem):
+            r = item.rect()
+            return f"x={r.x():.1f}, y={r.y():.1f}, w={r.width():.1f}, h={r.height():.1f}"
+        elif isinstance(item, PointItem):
+            p = item.pos()
+            return f"x={p.x():.1f}, y={p.y():.1f}"
+        elif isinstance(item, PolygonItem):
+            pts = getattr(item, 'polygon_points', [])
+            return f"points={len(pts)}"
+        else:
+            return ""
+
+    def update_elements_panel(self, *args, **kwargs):
+        """更新右侧只读元素表，展示当前图片所有元素的信息"""
+        # 清空表格
+        self.elements_table.setRowCount(0)
+        self.elements_row_items = []
+        rows = []
+        # 矩形
+        for rect in getattr(self.canvas, 'rect_items', []):
+            rows.append(('rectangle', self._format_item_coords(rect), getattr(rect, 'attributes', {}) or {}, rect))
+        # 点
+        for pt in getattr(self.canvas, 'point_items', []):
+            rows.append(('point', self._format_item_coords(pt), getattr(pt, 'attributes', {}) or {}, pt))
+        # 多边形
+        for poly in getattr(self.canvas, 'polygon_items', []):
+            rows.append(('polygon', self._format_item_coords(poly), getattr(poly, 'attributes', {}) or getattr(poly, 'flags', {}) or {}, poly))
+
+        self.elements_table.setRowCount(len(rows))
+        for i, (t, coord, attrs, ref_item) in enumerate(rows):
+            type_item = QTableWidgetItem(t)
+            coord_item = QTableWidgetItem(coord)
+            attrs_text = json.dumps(attrs, ensure_ascii=False)
+            attrs_item = QTableWidgetItem(attrs_text)
+
+            # 颜色调整
+            type_item.setForeground(self.status_bar.palette().windowText())
+            coord_item.setForeground(self.status_bar.palette().windowText())
+            attrs_item.setForeground(self.status_bar.palette().windowText())
+
+            self.elements_table.setItem(i, 0, type_item)
+            self.elements_table.setItem(i, 1, coord_item)
+            self.elements_table.setItem(i, 2, attrs_item)
+            # 记录对应的 scene item
+            self.elements_row_items.append(ref_item)
+
+        pass

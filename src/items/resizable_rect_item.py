@@ -25,6 +25,8 @@ class ResizableRectItem(QGraphicsRectItem):
         
         # 标注标签
         self.label = label
+        # 形状类型
+        self.shape_type = 'rectangle'
         
         # 所属分组
         self.group_id = group_id
@@ -32,6 +34,9 @@ class ResizableRectItem(QGraphicsRectItem):
         
         # 用于JSON序列化的唯一ID
         self.item_id = id(self)
+
+        # 可编辑属性字典（对应 label.json 中定义的属性），序列化时放到 'flags'
+        self.attributes = {}
         
         # 调整大小的手柄设置
         self.handle_size = 6
@@ -304,7 +309,7 @@ class ResizableRectItem(QGraphicsRectItem):
             ],
             'group_id': self.group_id,
             'shape_type': 'rectangle',
-            'flags': {}
+            'flags': self.attributes.copy() if self.attributes else {}
         }
     
     @classmethod
@@ -324,5 +329,7 @@ class ResizableRectItem(QGraphicsRectItem):
         rect = QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
         label = data.get('label', 'rect')
         item = cls(rect, label, data.get('group_id'))
+        # 恢复自定义属性
+        item.attributes = data.get('flags', {}) or {}
         
         return item

@@ -408,7 +408,17 @@ class AnnotationView(QGraphicsView):
             if abs(end_pos.x() - self.start_pos.x()) < 10 or abs(end_pos.y() - self.start_pos.y()) < 10:
                 self.scene.removeItem(self.current_rect)
             else:
-                self.rect_items.append(self.current_rect)
+                new_rect = self.current_rect
+                # 取消其他选中项，仅选中新创建的矩形
+                for it in list(self.scene.selectedItems()):
+                    it.setSelected(False)
+                self.rect_items.append(new_rect)
+                # 选中新矩形以显示缩放手柄
+                try:
+                    new_rect.setSelected(True)
+                    new_rect.update()
+                except Exception:
+                    pass
                 self.current_rect = None
                 self.set_modified(True)
         else:

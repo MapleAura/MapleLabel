@@ -27,6 +27,8 @@ class PointItem(QGraphicsItem):
         
         # 标注标签
         self.label = label
+        # 形状类型
+        self.shape_type = 'point'
         
         # 所属分组
         self.group_id = group_id
@@ -34,6 +36,8 @@ class PointItem(QGraphicsItem):
         
         # 用于JSON序列化的唯一ID
         self.item_id = id(self)
+        # 可编辑属性字典，序列化到 'flags'
+        self.attributes = {}
         
         # 设置Z值，确保点在最上层
         self.setZValue(10)
@@ -76,7 +80,7 @@ class PointItem(QGraphicsItem):
             'points': [[self.pos().x(), self.pos().y()]],
             'group_id': self.group_id,
             'shape_type': 'point',
-            'flags': {}
+            'flags': self.attributes.copy() if self.attributes else {}
         }
     
     @classmethod
@@ -90,5 +94,7 @@ class PointItem(QGraphicsItem):
         radius = 5
         label = data.get('label', 'point')
         item = cls(pos, radius, label, data.get('group_id'))
+        # 恢复自定义属性
+        item.attributes = data.get('flags', {}) or {}
         
         return item

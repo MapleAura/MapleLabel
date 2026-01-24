@@ -42,7 +42,12 @@ class PolygonItem(QGraphicsPolygonItem):
         self.polygon_points = []  # 存储多边形点坐标
         self.label = label  # 多边形标签
         self.group_id = group_id  # 组ID
-        self.flags = flags or {}  # 标志字典，用于存储额外属性
+        # 标志字典/属性，用于存储额外属性（与 label.json 对应）
+        self.flags = flags or {}
+        # 统一属性名，方便外部访问
+        self.attributes = self.flags
+        # 形状类型
+        self.shape_type = 'polygon'
         self.is_closed = False  # 多边形是否已封闭
         self.vertex_radius = 6
         
@@ -201,7 +206,7 @@ class PolygonItem(QGraphicsPolygonItem):
             "points": [[p.x(), p.y()] for p in self.polygon_points],
             "group_id": self.group_id,
             "shape_type": "polygon",
-            "flags": self.flags.copy() if self.flags else {}
+            "flags": self.attributes.copy() if self.attributes else {}
         }
     
     @classmethod
@@ -244,6 +249,7 @@ class PolygonItem(QGraphicsPolygonItem):
         if scene:
             scene.addItem(item)
             
+        # 恢复 attributes 已在构造时设置
         return item
     
     def to_json(self, indent=2):
