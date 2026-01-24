@@ -272,6 +272,14 @@ class AnnotationView(QGraphicsView):
             except Exception:
                 pass
             self.point_items.append(point_item)
+            # 记录撤销操作
+            try:
+                win = self.window()
+                if hasattr(win, "undo_manager") and win.undo_manager:
+                    win.undo_manager.push_create(point_item, name="create_point")
+            except Exception:
+                pass
+
             self.set_modified(True)
 
         elif self.current_tool == "polygon":
@@ -322,6 +330,14 @@ class AnnotationView(QGraphicsView):
                         pass
                     self.polygon_items.append(poly)
                     self.current_polygon = None
+
+                    # 记录撤销操作（多边形）
+                    try:
+                        win = self.window()
+                        if hasattr(win, "undo_manager") and win.undo_manager:
+                            win.undo_manager.push_create(poly, name="create_polygon")
+                    except Exception:
+                        pass
 
                     self.set_modified(True)
                 else:
@@ -385,6 +401,14 @@ class AnnotationView(QGraphicsView):
                     new_rect.update()
                 except Exception:
                     pass
+                # 记录撤销操作（矩形）
+                try:
+                    win = self.window()
+                    if hasattr(win, "undo_manager") and win.undo_manager:
+                        win.undo_manager.push_create(new_rect, name="create_rect")
+                except Exception:
+                    pass
+
                 self.current_rect = None
                 self.set_modified(True)
         else:
@@ -394,19 +418,31 @@ class AnnotationView(QGraphicsView):
     def keyPressEvent(self, event: QKeyEvent):
         """处理键盘事件 - 修复删除快捷键"""
         if event.key() == Qt.Key_Delete:
-            # 删除所有选中的项
-            for item in self.scene.selectedItems():
-                if isinstance(item, ResizableRectItem) and item in self.rect_items:
-                    self.rect_items.remove(item)
-                elif isinstance(item, PointItem) and item in self.point_items:
-                    self.point_items.remove(item)
-                elif isinstance(item, PolygonItem) and item in self.polygon_items:
-                    self.polygon_items.remove(item)
-                elif isinstance(item, GroupItem):
-                    # 删除分组
-                    self.remove_group(item)
-                self.scene.removeItem(item)
-                self.set_modified(True)
+            # 优先使用主窗口的删除逻辑（以便支持撤销）
+            try:
+                win = self.window()
+            except Exception:
+                win = None
+
+            if win is not None and hasattr(win, "delete_selected"):
+                try:
+                    win.delete_selected()
+                except Exception:
+                    pass
+            else:
+                # 回退到旧的删除实现
+                for item in self.scene.selectedItems():
+                    if isinstance(item, ResizableRectItem) and item in self.rect_items:
+                        self.rect_items.remove(item)
+                    elif isinstance(item, PointItem) and item in self.point_items:
+                        self.point_items.remove(item)
+                    elif isinstance(item, PolygonItem) and item in self.polygon_items:
+                        self.polygon_items.remove(item)
+                    elif isinstance(item, GroupItem):
+                        # 删除分组
+                        self.remove_group(item)
+                    self.scene.removeItem(item)
+                    self.set_modified(True)
 
         elif event.key() == Qt.Key_Escape:
             # 按ESC键取消绘制

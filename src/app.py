@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 
 from .items import GroupItem, PointItem, PolygonItem, ResizableRectItem
 from .utils import IconManager
+from .utils.undo_manager import UndoRedoManager
 from .widgets import AnnotationView, CollapsiblePanel, FileListWidgetItem
 
 
@@ -59,6 +60,8 @@ class MapleLabelWindow(QMainWindow):
         # 中心画布区域
         self.canvas = AnnotationView()
         self.canvas.setStyleSheet("background-color: #2D2D30;")
+        # 撤销/重做管理器
+        self.undo_manager = UndoRedoManager(self.canvas)
         # 使用 QSplitter 让右侧面板可调节宽度
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.addWidget(self.canvas)
@@ -121,7 +124,7 @@ class MapleLabelWindow(QMainWindow):
         """
         )
         self.elements_layout = QVBoxLayout(self.elements_panel)
-        self.elements_layout.addWidget(QLabel("元素概览（只读）"))
+        self.elements_layout.addWidget(QLabel("概览"))
         self.elements_table = QTableWidget()
         self.elements_table.setColumnCount(3)
         self.elements_table.setHorizontalHeaderLabels(["类型", "坐标", "属性"])
@@ -312,12 +315,43 @@ class MapleLabelWindow(QMainWindow):
         self.fit_view_shortcut = QShortcut(Qt.Key_Z, self)  # 将 Qt.Key_Space 改为 Qt.Key_Z
         self.fit_view_shortcut.activated.connect(lambda: self.canvas.fit_to_view())
 
+        # 撤销/重做快捷键
+        self.undo_shortcut = QShortcut(QKeySequence("Ctrl+Z"), self)
+        self.undo_shortcut.activated.connect(self.undo)
+
+        self.redo_shortcut = QShortcut(QKeySequence("Ctrl+Y"), self)
+        self.redo_shortcut.activated.connect(self.redo)
+
         # 为每个快捷键创建QShortcut
         for key, tool_name in self.tool_shortcuts.items():
             shortcut = QShortcut(key, self)
             shortcut.activated.connect(
                 lambda t=tool_name: self.activate_tool_by_shortcut(t)
             )
+
+    def undo(self) -> None:
+        """执行撤销操作并显示状态。"""
+        try:
+            if hasattr(self, "undo_manager") and self.undo_manager:
+                ok = self.undo_manager.undo()
+                if ok:
+                    self.status_bar.showMessage("已撤销 (Ctrl+Z)")
+                    return
+        except Exception:
+            pass
+        self.status_bar.showMessage("无可撤销操作")
+
+    def redo(self) -> None:
+        """执行重做操作并显示状态。"""
+        try:
+            if hasattr(self, "undo_manager") and self.undo_manager:
+                ok = self.undo_manager.redo()
+                if ok:
+                    self.status_bar.showMessage("已恢复 (Ctrl+Y)")
+                    return
+        except Exception:
+            pass
+        self.status_bar.showMessage("无可恢复操作")
 
     def auto_save(self) -> None:
         """自动保存当前图片到临时文件（如果有修改）。"""
@@ -419,17 +453,28 @@ class MapleLabelWindow(QMainWindow):
 
     def delete_selected(self) -> None:
         """删除当前选中的项。"""
-        for item in self.canvas.scene.selectedItems():
-            if isinstance(item, ResizableRectItem) and item in self.canvas.rect_items:
-                self.canvas.rect_items.remove(item)
-            elif isinstance(item, PointItem) and item in self.canvas.point_items:
-                self.canvas.point_items.remove(item)
-            elif isinstance(item, PolygonItem) and item in self.canvas.polygon_items:
-                self.canvas.polygon_items.remove(item)
-            elif isinstance(item, GroupItem):
-                # 删除分组
-                self.canvas.remove_group(item)
-            self.canvas.scene.removeItem(item)
+        items = list(self.canvas.scene.selectedItems())
+        if not items:
+            return
+
+        # 使用撤销管理器执行删除并记录操作
+        try:
+            if hasattr(self, "undo_manager") and self.undo_manager:
+                self.undo_manager.push_and_execute_delete(items, name="delete")
+            else:
+                for item in items:
+                    if isinstance(item, ResizableRectItem) and item in self.canvas.rect_items:
+                        self.canvas.rect_items.remove(item)
+                    elif isinstance(item, PointItem) and item in self.canvas.point_items:
+                        self.canvas.point_items.remove(item)
+                    elif isinstance(item, PolygonItem) and item in self.canvas.polygon_items:
+                        self.canvas.polygon_items.remove(item)
+                    elif isinstance(item, GroupItem):
+                        self.canvas.remove_group(item)
+                    self.canvas.scene.removeItem(item)
+        except Exception:
+            pass
+
         self.canvas.set_modified(True)
         self.status_bar.showMessage("已删除选中项 | 快捷键: Delete/E | MapleLabel2.0")
 
@@ -463,6 +508,20 @@ class MapleLabelWindow(QMainWindow):
                 "text": "保存",
                 "icon": "save",
                 "shortcut": "Ctrl+S",
+                "checkable": False,
+            },
+            {
+                "name": "undo",
+                "text": "撤销",
+                "icon": "undo",
+                "shortcut": "Ctrl+Z",
+                "checkable": False,
+            },
+            {
+                "name": "redo",
+                "text": "恢复",
+                "icon": "redo",
+                "shortcut": "Ctrl+Y",
                 "checkable": False,
             },
             {
@@ -615,6 +674,10 @@ class MapleLabelWindow(QMainWindow):
                 btn.clicked.connect(self.ungroup_selected_items)
             elif tool["name"] == "delete":
                 btn.clicked.connect(self.delete_selected)
+            elif tool["name"] == "undo":
+                btn.clicked.connect(self.undo)
+            elif tool["name"] == "redo":
+                btn.clicked.connect(self.redo)
             elif tool["name"] == "save":
                 btn.clicked.connect(self.save_annotations)
             elif tool["name"] == "prev_image":
@@ -999,11 +1062,11 @@ class MapleLabelWindow(QMainWindow):
         if isinstance(item, ResizableRectItem):
             r = item.rect()
             return (
-                f"x={r.x():.1f}, y={r.y():.1f}, w={r.width():.1f}, h={r.height():.1f}"
+                f"({r.x():.1f}, {r.y():.1f}, {r.width():.1f}, {r.height():.1f})"
             )
         elif isinstance(item, PointItem):
             p = item.pos()
-            return f"x={p.x():.1f}, y={p.y():.1f}"
+            return f"({p.x():.1f}, {p.y():.1f})"
         elif isinstance(item, PolygonItem):
             pts = getattr(item, "polygon_points", [])
             return f"points={len(pts)}"

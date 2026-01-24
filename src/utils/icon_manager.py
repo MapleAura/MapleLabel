@@ -46,8 +46,11 @@ class IconManager:
             "prev_image": "prev.svg",
             "next_image": "next.svg",
             "fit_view": "fit.svg",
+            "undo": "undo.svg",
+            "redo": "redo.svg",
             # 其他
             "logo": "logo.png",
+            
         }
 
     def get_icon(self, icon_name, size=16):
