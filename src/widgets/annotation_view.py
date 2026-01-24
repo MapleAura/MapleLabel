@@ -6,8 +6,7 @@ from PySide6.QtCore import Qt, QRectF, QPointF
 from PySide6.QtGui import (QPainter, QPen, QBrush, QColor, QPixmap, 
                           QWheelEvent, QMouseEvent, QKeyEvent, QTransform)
 from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
-                              QMessageBox)
-
+                              QMessageBox, QGraphicsItem)
 from ..items import GroupItem, ResizableRectItem, PointItem, PolygonItem
 
 class AnnotationView(QGraphicsView):
@@ -113,11 +112,11 @@ class AnnotationView(QGraphicsView):
                 
                 item = None
                 if shape_type == 'rectangle':
-                    item = ResizableRectItem.from_dict(shape_data, self.scene)
+                    item = ResizableRectItem.from_dict(shape_data, None)
                 elif shape_type == 'point':
-                    item = PointItem.from_dict(shape_data, self.scene)
+                    item = PointItem.from_dict(shape_data, None)
                 elif shape_type == 'polygon':
-                    item = PolygonItem.from_dict(shape_data, self.scene)
+                    item = PolygonItem.from_dict(shape_data, None)
                 
                 if item:
                     self.scene.addItem(item)
@@ -332,6 +331,16 @@ class AnnotationView(QGraphicsView):
             # 创建点
             point_item = PointItem(scene_pos, label="point")
             self.scene.addItem(point_item)
+            # 设置默认属性值（来自主窗口的 label_config）
+            try:
+                win = self.window()
+                cfg = getattr(win, 'label_config', {})
+                defaults = cfg.get('point', {})
+                for k, opts in defaults.items():
+                    if opts:
+                        point_item.attributes[k] = opts[0]
+            except Exception:
+                pass
             self.point_items.append(point_item)
             self.set_modified(True)
             
@@ -367,7 +376,18 @@ class AnnotationView(QGraphicsView):
                     if hasattr(self.current_polygon, 'preview_point'):
                         self.current_polygon.preview_point = None
                     self.current_polygon.update()
-                    self.polygon_items.append(self.current_polygon)
+                    # 完成多边形并添加默认属性
+                    poly = self.current_polygon
+                    try:
+                        win = self.window()
+                        cfg = getattr(win, 'label_config', {})
+                        defaults = cfg.get('polygon', {})
+                        for k, opts in defaults.items():
+                            if opts:
+                                poly.attributes[k] = opts[0]
+                    except Exception:
+                        pass
+                    self.polygon_items.append(poly)
                     self.current_polygon = None
                     
                     self.set_modified(True)
@@ -409,6 +429,16 @@ class AnnotationView(QGraphicsView):
                 self.scene.removeItem(self.current_rect)
             else:
                 new_rect = self.current_rect
+                # 设置默认属性（来自主窗口的 label_config）
+                try:
+                    win = self.window()
+                    cfg = getattr(win, 'label_config', {})
+                    defaults = cfg.get('rectangle', {})
+                    for k, opts in defaults.items():
+                        if opts:
+                            new_rect.attributes[k] = opts[0]
+                except Exception:
+                    pass
                 # 取消其他选中项，仅选中新创建的矩形
                 for it in list(self.scene.selectedItems()):
                     it.setSelected(False)
@@ -422,6 +452,7 @@ class AnnotationView(QGraphicsView):
                 self.current_rect = None
                 self.set_modified(True)
         else:
+            self.set_modified(True)
             super().mouseReleaseEvent(event)
     
     def keyPressEvent(self, event: QKeyEvent):

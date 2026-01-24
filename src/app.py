@@ -109,10 +109,19 @@ class MapleLabelWindow(QMainWindow):
         self.splitter.addWidget(self.right_panel)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 0)
+        # 防止右侧被拖动到完全折叠，保证连贯的左右拖动
+        try:
+            self.right_panel.setMinimumWidth(20)
+            # 阻止 splitter 将右侧（index 1）收缩为0
+            self.splitter.setCollapsible(1, False)
+        except Exception:
+            pass
         self.main_layout.addWidget(self.splitter)
 
         # 绑定场景变化以更新元素列表（changed 会频繁触发）
         self.canvas.scene.changed.connect(self.update_elements_panel)
+        # 场景变更时也更新属性面板中的坐标（实时响应拖动）
+        self.canvas.scene.changed.connect(self.update_property_coords)
 
         # 存储当前 elements 表格行对应的 scene item 引用
         self.elements_row_items = []
@@ -669,19 +678,8 @@ class MapleLabelWindow(QMainWindow):
         base_name = os.path.splitext(self.current_image)[0]
         json_path = base_name + '.json'
         
-        # 询问是否包含图片数据
-        include_image_data = QMessageBox.question(
-            self, 
-            "保存选项", 
-            "是否在JSON中包含图片数据？\n包含图片数据会使文件变大，但可以独立使用。\n不包含图片数据则需要保持图片文件与JSON文件在同一目录。",
-            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-            QMessageBox.No
-        )
-        
-        if include_image_data == QMessageBox.Cancel:
-            return
-        
-        include_image_data = (include_image_data == QMessageBox.Yes)
+        # 默认在JSON中包含图片数据（base64），无需弹窗询问
+        include_image_data = True
         
         if self.canvas.save_annotations_to_json(json_path, include_image_data):
             self.status_bar.showMessage(f"标注已保存到: {json_path} (LabelMe格式)")
@@ -788,6 +786,8 @@ class MapleLabelWindow(QMainWindow):
         coords_label = QLabel(self._format_item_coords(item))
         coords_label.setStyleSheet('color: #D4D4D4;')
         self.property_form.addRow('坐标', coords_label)
+        # 保存当前坐标标签引用，用于快速更新而不重建整个表单
+        self._current_coords_label = coords_label
 
         # 从 label_config 中查找该类型的属性定义
         attrs_def = self.label_config.get(shape_type, {})
@@ -829,6 +829,19 @@ class MapleLabelWindow(QMainWindow):
 
             combo.currentTextChanged.connect(make_on_change(item, attr_name))
             self.property_form.addRow(attr_name, combo)
+
+    def update_property_coords(self, *args, **kwargs):
+        """仅更新属性面板中坐标显示（在场景变更时调用，性能友好）"""
+        try:
+            if not hasattr(self, '_current_coords_label'):
+                return
+            selected = self.canvas.scene.selectedItems()
+            if not selected:
+                return
+            item = selected[0]
+            self._current_coords_label.setText(self._format_item_coords(item))
+        except Exception:
+            pass
 
     def _format_item_coords(self, item):
         """返回一个简单文本表示坐标的字符串"""

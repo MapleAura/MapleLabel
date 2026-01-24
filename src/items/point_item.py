@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QGraphicsItem
 class PointItem(QGraphicsItem):
     """可编辑的点标注"""
     
-    def __init__(self, pos=None, radius=5, label="point", group_id=None, parent=None):
+    def __init__(self, pos=None, radius=3, label="point", group_id=None, parent=None):
         super().__init__(parent)
         
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
@@ -18,6 +18,13 @@ class PointItem(QGraphicsItem):
         self.normal_color = QColor(255, 0, 0, 200)
         self.selected_color = QColor(255, 255, 0, 200)
         self.color = self.normal_color
+
+        # 当光标移到点上时使用平移/移动光标
+        try:
+            from PySide6.QtCore import Qt as _Qt
+            self.setCursor(_Qt.SizeAllCursor)
+        except Exception:
+            pass
         
         # 设置位置
         if pos:
@@ -91,7 +98,7 @@ class PointItem(QGraphicsItem):
             return None
         
         pos = QPointF(points[0][0], points[0][1])
-        radius = 5
+        radius = 3
         label = data.get('label', 'point')
         item = cls(pos, radius, label, data.get('group_id'))
         # 恢复自定义属性

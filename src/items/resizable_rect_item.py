@@ -1,6 +1,7 @@
 from PySide6.QtCore import QRectF, Qt, QPointF
 from PySide6.QtGui import QColor, QPen, QBrush, QPainter, QPainterPath
 from PySide6.QtWidgets import QGraphicsRectItem
+from PySide6.QtWidgets import QGraphicsItem
 
 
 class ResizableRectItem(QGraphicsRectItem):
@@ -64,6 +65,10 @@ class ResizableRectItem(QGraphicsRectItem):
         # 立即初始化句柄位置
         self.update_handles()
         self.resizing = False
+        # 自定义移动状态（用于在平移时更新 rect 而不是仅改变 pos）
+        self._moving = False
+        self._move_start_scene_pos = None
+        self._move_start_rect = None
     
     def update_handles(self):
         """更新手柄位置 - 将手柄放在矩形边缘上"""
@@ -83,6 +88,7 @@ class ResizableRectItem(QGraphicsRectItem):
                 handle_y = rect.y() + rect.height() - self.handle_size / 2
             
             handle.setRect(handle_x, handle_y, self.handle_size, self.handle_size)
+            
     
     def itemChange(self, change, value):
         """处理项变化"""
@@ -92,7 +98,7 @@ class ResizableRectItem(QGraphicsRectItem):
             if hasattr(self, 'group_item') and self.group_item:
                 self.group_item.update_bounds()
             self.update_handles()
-            
+
         return super().itemChange(change, value)
     
     def paint(self, painter, option, widget=None):
@@ -183,8 +189,11 @@ class ResizableRectItem(QGraphicsRectItem):
                 event.accept()
                 return
         
+        # 非手柄区域：进入自定义移动模式（不调用 super，这样我们可以在移动时更新 rect）
         self.resizing = False
-        # 当在矩形内部按下鼠标时，设置为SizeAllCursor（四向箭头，表示移动）
+        self._moving = True
+        self._move_start_scene_pos = event.scenePos()
+        self._move_start_rect = self.rect()
         self.setCursor(Qt.SizeAllCursor)
         super().mousePressEvent(event)
     
@@ -241,8 +250,38 @@ class ResizableRectItem(QGraphicsRectItem):
                 
                 # 通知视图更新
                 self.prepareGeometryChange()
-            
-            event.accept()
+
+        elif self._moving:
+            # 计算场景坐标的偏移并转换到项的本地坐标系
+            start_scene = self._move_start_scene_pos
+            current_scene = event.scenePos()
+            local_start = self.mapFromScene(start_scene)
+            local_current = self.mapFromScene(current_scene)
+            dx = local_current.x() - local_start.x()
+            dy = local_current.y() - local_start.y()
+
+            rect = self._move_start_rect
+            # 平移矩形
+            new_rect = QRectF(rect.x() + dx, rect.y() + dy, rect.width(), rect.height())
+            self.setRect(new_rect)
+            self.update_handles()
+            if hasattr(self, 'group_item') and self.group_item:
+                self.group_item.update_bounds()
+            # 更新几何并通知视图
+            self.prepareGeometryChange()
+            try:
+                scene = self.scene()
+                if scene:
+                    views = scene.views()
+                    if views:
+                        view = views[0]
+                        if hasattr(view, 'set_modified'):
+                            view.set_modified(True)
+                        if hasattr(view, 'update_property_coords'):
+                            view.update_property_coords()
+            except Exception:
+                pass
+            # event.accept()
         else:
             super().mouseMoveEvent(event)
     
@@ -254,7 +293,26 @@ class ResizableRectItem(QGraphicsRectItem):
             self.update_cursor(event.scenePos())
             event.accept()
         else:
-            super().mouseReleaseEvent(event)
+            if self._moving:
+                self._moving = False
+                # 触发一次坐标/状态更新
+                try:
+                    scene = self.scene()
+                    if scene:
+                        views = scene.views()
+                        if views:
+                            view = views[0]
+                            if hasattr(view, 'set_modified'):
+                                view.set_modified(True)
+                            if hasattr(view, 'update_property_coords'):
+                                view.update_property_coords()
+                except Exception:
+                    pass
+                # 恢复光标状态
+                self.update_cursor(event.scenePos())
+                event.accept()
+            else:
+                super().mouseReleaseEvent(event)
     
     def update_cursor(self, scene_pos):
         """根据鼠标位置更新光标"""

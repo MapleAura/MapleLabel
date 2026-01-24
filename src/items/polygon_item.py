@@ -11,7 +11,7 @@ import json
 class PolygonVertex(QGraphicsEllipseItem):
     """多边形顶点项"""
     
-    def __init__(self, x, y, radius=6, parent=None):
+    def __init__(self, x, y, radius=3, parent=None):
         super().__init__(-radius, -radius, radius*2, radius*2, parent)
         self.setPos(x, y)
         self.setBrush(QBrush(Qt.red))
@@ -22,6 +22,12 @@ class PolygonVertex(QGraphicsEllipseItem):
         self.radius = radius
         self.parent_polygon = parent
         self.setZValue(2)  # 顶点在最上层
+        # 光标悬停在顶点上显示平移光标
+        try:
+            from PySide6.QtCore import Qt as _Qt
+            self.setCursor(_Qt.SizeAllCursor)
+        except Exception:
+            pass
         
     def itemChange(self, change, value):
         """顶点位置变化时通知多边形更新"""
@@ -49,10 +55,10 @@ class PolygonItem(QGraphicsPolygonItem):
         # 形状类型
         self.shape_type = 'polygon'
         self.is_closed = False  # 多边形是否已封闭
-        self.vertex_radius = 6
+        self.vertex_radius = 3
         
         # 默认样式
-        self.setPen(QPen(QColor(0, 255, 0), 2))  # labelme 通常用绿色
+        self.setPen(QPen(QColor(0, 255, 0), 1))  # labelme 通常用绿色
         self.setBrush(QBrush(QColor(0, 255, 0, 50)))  # 半透明绿色填充
         
         self.setFlag(QGraphicsPolygonItem.ItemIsMovable, False)
