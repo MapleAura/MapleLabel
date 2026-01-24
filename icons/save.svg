@@ -1,0 +1,13 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <g fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+        <!-- 软盘主体 -->
+        <rect x="50" y="50" width="100" height="120" rx="5"/>
+        <!-- 软盘标签区域 -->
+        <rect x="60" y="60" width="80" height="60" rx="2"/>
+        <!-- 软盘中心孔 -->
+        <circle cx="100" cy="100" r="8"/>
+        <!-- “+”号徽章（表示新增/确认） -->
+        <circle cx="155" cy="65" r="20"/>
+        <path d="M155 55 L155 75 M145 65 L165 65"/>
+    </g>
+</svg>

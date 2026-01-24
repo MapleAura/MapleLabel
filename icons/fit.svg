@@ -1,0 +1,8 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- 放大镜手柄 -->
+  <path d="M120 120L150 150" stroke="white" stroke-width="10" stroke-linecap="round"/>
+  <!-- 放大镜圆环 -->
+  <circle cx="100" cy="100" r="40" fill="none" stroke="white" stroke-width="10"/>
+  <!-- 内部适应框 -->
+  <rect x="85" y="85" width="30" height="30" rx="3" fill="none" stroke="white" stroke-width="6"/>
+</svg>

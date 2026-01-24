@@ -1,0 +1,11 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <g fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round">
+        <!-- 虚线矩形框 -->
+        <rect x="65" y="65" width="70" height="70" rx="3" stroke-dasharray="5, 3"/>
+        <!-- 四个角上的控制点 -->
+        <rect x="60" y="60" width="8" height="8" rx="1" fill="#FFFFFF"/>
+        <rect x="132" y="60" width="8" height="8" rx="1" fill="#FFFFFF"/>
+        <rect x="60" y="132" width="8" height="8" rx="1" fill="#FFFFFF"/>
+        <rect x="132" y="132" width="8" height="8" rx="1" fill="#FFFFFF"/>
+    </g>
+</svg>
