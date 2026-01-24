@@ -113,7 +113,8 @@ class PointItem(QGraphicsItem):
             "points": [[self.pos().x(), self.pos().y()]],
             "group_id": self.group_id,
             "shape_type": "point",
-            "flags": self.attributes.copy() if self.attributes else {},
+            "attrs": self.attributes.copy() if self.attributes else {},
+            "flags": {},
         }
 
     @classmethod
@@ -131,6 +132,8 @@ class PointItem(QGraphicsItem):
         label = data.get("label", "point")
         item = cls(pos, radius, label, data.get("group_id"))
         # 恢复自定义属性
-        item.attributes = data.get("flags", {}) or {}
+        item.attributes = data.get("attrs", None)
+        if item.attributes is None:
+            item.attributes = data.get("flags", {}) or {}
 
         return item

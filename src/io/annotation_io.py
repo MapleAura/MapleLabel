@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 from typing import Optional
@@ -33,28 +32,61 @@ def save_annotations_to_json(
     for rect in getattr(view, "rect_items", []):
         shape_data = rect.to_dict()
         if shape_data:
+            # ensure description field exists for LabelMe compatibility
+            if "description" not in shape_data:
+                shape_data["description"] = ""
+            # ensure rectangle uses two points: left-top and right-bottom
+            if shape_data.get("shape_type") == "rectangle":
+                pts = shape_data.get("points", [])
+                if isinstance(pts, list):
+                    # if four points provided, reduce to two (min/max)
+                    if len(pts) == 4:
+                        xs = [p[0] for p in pts]
+                        ys = [p[1] for p in pts]
+                        min_x, max_x = min(xs), max(xs)
+                        min_y, max_y = min(ys), max(ys)
+                        shape_data["points"] = [[min_x, min_y], [max_x, max_y]]
+                    elif len(pts) == 2:
+                        x1, y1 = pts[0]
+                        x2, y2 = pts[1]
+                        min_x, max_x = min(x1, x2), max(x1, x2)
+                        min_y, max_y = min(y1, y2), max(y1, y2)
+                        shape_data["points"] = [[min_x, min_y], [max_x, max_y]]
+                    else:
+                        # unexpected format: try to coerce to bounding two points
+                        try:
+                            xs = [p[0] for p in pts]
+                            ys = [p[1] for p in pts]
+                            min_x, max_x = min(xs), max(xs)
+                            min_y, max_y = min(ys), max(ys)
+                            shape_data["points"] = [[min_x, min_y], [max_x, max_y]]
+                        except Exception:
+                            pass
+            # ensure mask field exists per our protocol
+            shape_data["mask"] = None
             labelme_data["shapes"].append(shape_data)
 
     # points
     for point in getattr(view, "point_items", []):
         shape_data = point.to_dict()
         if shape_data:
+            if "description" not in shape_data:
+                shape_data["description"] = ""
+            shape_data["mask"] = None
             labelme_data["shapes"].append(shape_data)
 
     # polygons
     for polygon in getattr(view, "polygon_items", []):
         shape_data = polygon.to_dict()
         if shape_data:
+            if "description" not in shape_data:
+                shape_data["description"] = ""
+            shape_data["mask"] = None
             labelme_data["shapes"].append(shape_data)
 
+    # Do not embed image binary data; keep `imageData` as null per new requirement
     if include_image_data:
-        try:
-            with open(view.current_image_path, "rb") as f:
-                image_data = f.read()
-            labelme_data["imageData"] = base64.b64encode(image_data).decode("utf-8")
-        except Exception:
-            # keep imageData as None if reading fails
-            labelme_data["imageData"] = None
+        labelme_data["imageData"] = None
 
     try:
         with open(json_path, "w", encoding="utf-8") as f:

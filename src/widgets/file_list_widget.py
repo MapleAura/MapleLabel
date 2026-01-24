@@ -42,12 +42,19 @@ class FileListWidgetItem(QWidget):
         self.temp_label.setStyleSheet("color: #FFA500; font-weight: bold;")
         self.temp_label.setVisible(has_temp)
 
+        # 布局顺序：复选框 | 临时标记 | 文件名 | 弹性间隔
         self.layout.addWidget(self.checkbox)
+        self.layout.addWidget(self.temp_label)
         self.layout.addWidget(self.label)
         self.layout.addStretch()
-        self.layout.addWidget(self.temp_label)
 
     def set_temp_status(self, has_temp: bool) -> None:
         """设置并显示临时保存状态指示。"""
-        self.temp_label.setVisible(has_temp)
+        # 使用有/无文本的方式显示在文件名前的点
+        if has_temp:
+            self.temp_label.setText("●")
+            self.temp_label.setVisible(True)
+        else:
+            self.temp_label.setText("")
+            self.temp_label.setVisible(False)
         # 复选框状态保持不变，只反映 JSON 文件存在

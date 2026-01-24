@@ -383,18 +383,14 @@ class ResizableRectItem(QGraphicsRectItem):
         """转换为字典用于JSON序列化（LabelMe shapes 条目）。"""
         rect = self.rect()
         x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
-
+        # LabelMe rectangle: use two points [top-left, bottom-right]
         return {
             "label": self.label,
-            "points": [
-                [x, y],  # 左上
-                [x + w, y],  # 右上
-                [x + w, y + h],  # 右下
-                [x, y + h],  # 左下
-            ],
+            "points": [[x, y], [x + w, y + h]],
             "group_id": self.group_id,
             "shape_type": "rectangle",
-            "flags": self.attributes.copy() if self.attributes else {},
+            "attrs": self.attributes.copy() if self.attributes else {},
+            "flags": {},
         }
 
     @classmethod
@@ -403,21 +399,27 @@ class ResizableRectItem(QGraphicsRectItem):
 
         返回新创建的 `ResizableRectItem` 或在数据无效时返回 None。
         """
-        # LabelMe格式：矩形用四个点表示
-        points = data["points"]
-        if len(points) != 4:
+        # Accept LabelMe rectangles represented as 2 points ([tl, br])
+        # or 4 points (clockwise). Coerce any >=2 points to bounding box.
+        points = data.get("points")
+        if not isinstance(points, list) or len(points) < 2:
             return None
 
-        # 计算最小包围矩形
-        x_values = [p[0] for p in points]
-        y_values = [p[1] for p in points]
+        try:
+            x_values = [float(p[0]) for p in points]
+            y_values = [float(p[1]) for p in points]
+        except Exception:
+            return None
+
         min_x, max_x = min(x_values), max(x_values)
         min_y, max_y = min(y_values), max(y_values)
 
         rect = QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
         label = data.get("label", "rect")
         item = cls(rect, label, data.get("group_id"))
-        # 恢复自定义属性
-        item.attributes = data.get("flags", {}) or {}
+        # 恢复自定义属性：优先使用 'attrs'，兼容 'flags'
+        item.attributes = data.get("attrs", None)
+        if item.attributes is None:
+            item.attributes = data.get("flags", {}) or {}
 
         return item

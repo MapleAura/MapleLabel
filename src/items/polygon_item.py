@@ -220,7 +220,8 @@ class PolygonItem(QGraphicsPolygonItem):
             "points": [[p.x(), p.y()] for p in self.polygon_points],
             "group_id": self.group_id,
             "shape_type": "polygon",
-            "flags": self.attributes.copy() if self.attributes else {},
+            "attrs": self.attributes.copy() if self.attributes else {},
+            "flags": {},
         }
 
     @classmethod
@@ -252,7 +253,7 @@ class PolygonItem(QGraphicsPolygonItem):
             points=points,
             label=data["label"],
             group_id=data.get("group_id"),
-            flags=data.get("flags", {}),
+            flags=data.get("attrs", {}) or data.get("flags", {}),
         )
 
         # 如果点足够多且未封闭，自动封闭多边形

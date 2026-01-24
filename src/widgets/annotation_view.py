@@ -163,6 +163,45 @@ class AnnotationView(QGraphicsView):
     def set_modified(self, modified: bool = True) -> bool:
         """设置修改标志并返回新的标志值。"""
         self.modified = modified
+        # 当发生修改时，自动保存到临时文件并立即通知主窗口刷新（使黄点即时显示）
+        if self.modified:
+            try:
+                # 如果主窗口提供 temp_dir，则使用统一目录
+                win = None
+                try:
+                    win = self.window()
+                except Exception:
+                    win = None
+
+                temp_dir = None
+                if win is not None:
+                    temp_dir = getattr(win, "temp_dir", None)
+
+                # 保存到临时目录（若 temp_dir 为 None 则使用默认实现）
+                try:
+                    self.save_annotations_to_temp(temp_dir)
+                except Exception:
+                    # 仍然忽略保存失败以不阻塞主流程
+                    pass
+
+                # 确保主窗口的 QFileSystemWatcher 关注该目录
+                if win is not None and temp_dir and os.path.exists(temp_dir):
+                    try:
+                        if hasattr(win, "temp_watcher") and temp_dir not in win.temp_watcher.directories():
+                            win.temp_watcher.addPath(temp_dir)
+                    except Exception:
+                        pass
+
+                # 立即让主窗口刷新文件列表状态（传入当前索引以减少开销）
+                if win is not None and hasattr(win, "update_file_list_status"):
+                    try:
+                        idx = getattr(win, "current_image_index", None)
+                        win.update_file_list_status(idx)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
         return self.modified
 
     def set_tool(self, tool: Optional[str]) -> None:

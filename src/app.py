@@ -9,7 +9,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QFileSystemWatcher
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -172,6 +172,15 @@ class MapleLabelWindow(QMainWindow):
 
         # 临时文件目录
         self.temp_dir = os.path.join(os.path.expanduser("~"), ".maplabel_temp")
+        # 监视临时目录，若临时文件出现/删除则即时刷新文件列表
+        self.temp_watcher = QFileSystemWatcher(self)
+        # 仅在目录已存在时添加监视
+        if os.path.exists(self.temp_dir):
+            try:
+                self.temp_watcher.addPath(self.temp_dir)
+            except Exception:
+                pass
+        self.temp_watcher.directoryChanged.connect(self.on_temp_dir_changed)
 
         # 添加上下文菜单
         self.create_context_menu()
@@ -319,6 +328,13 @@ class MapleLabelWindow(QMainWindow):
                 )
                 # 更新文件列表状态
                 self.update_file_list_status(self.current_image_index)
+                # 如果临时目录刚创建，确保被 QFileSystemWatcher 监视
+                if os.path.exists(self.temp_dir):
+                    try:
+                        if self.temp_dir not in self.temp_watcher.directories():
+                            self.temp_watcher.addPath(self.temp_dir)
+                    except Exception:
+                        pass
             else:
                 self.status_bar.showMessage("自动保存失败")
 
@@ -810,11 +826,7 @@ class MapleLabelWindow(QMainWindow):
 
         if self.canvas.save_annotations_to_json(json_path, include_image_data):
             self.status_bar.showMessage(f"标注已保存到: {json_path} (LabelMe格式)")
-
-            # 更新文件列表中的状态
-            self.update_file_list_status()
-
-            # 删除对应的临时文件（如果有）
+            # 删除对应的临时文件（如果有），然后更新文件列表状态
             temp_name = f"temp_{os.path.basename(self.current_image)}.json"
             temp_path = os.path.join(self.temp_dir, temp_name)
             if os.path.exists(temp_path):
@@ -822,6 +834,9 @@ class MapleLabelWindow(QMainWindow):
                     os.remove(temp_path)
                 except Exception as e:
                     print(f"删除临时文件时出错: {e}")
+
+            # 更新文件列表中的状态（传入当前索引以只刷新该项）
+            self.update_file_list_status(self.current_image_index)
         else:
             QMessageBox.critical(self, "保存失败", "保存标注时出错")
             self.status_bar.showMessage("保存失败")
@@ -876,6 +891,11 @@ class MapleLabelWindow(QMainWindow):
                 if widget and isinstance(widget, FileListWidgetItem):
                     widget.checkbox.setChecked(has_json or has_temp)
                     widget.set_temp_status(has_temp)
+
+    def on_temp_dir_changed(self, path: str) -> None:
+        """当临时目录内容变化时刷新文件列表中的临时标记。"""
+        # 目录变化时可能包含新增或删除的 temp_*.json，直接刷新所有项状态
+        self.update_file_list_status()
 
     def on_selection_changed(self) -> None:
         """场景选中项变化时更新属性面板。"""
