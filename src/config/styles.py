@@ -1,5 +1,6 @@
 from PySide6.QtGui import QColor, QPalette
 
+
 def get_dark_palette():
     """获取深色主题调色板"""
     palette = QPalette()
@@ -16,6 +17,7 @@ def get_dark_palette():
     palette.setColor(QPalette.Highlight, QColor(0, 122, 204))
     palette.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
     return palette
+
 
 def get_stylesheet():
     """获取应用程序样式表"""

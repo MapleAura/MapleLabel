@@ -1,18 +1,38 @@
-from PySide6.QtCore import QPointF, Qt, QRectF
-from PySide6.QtGui import QColor, QPen, QBrush, QPainter, QPainterPath
+"""点标注项模块。
+
+提供 `PointItem`，这是一个可移动/可选中的点标注项，支持序列化为 LabelMe 格式。
+所有注释与 docstring 使用中文，便于本地开发团队阅读。
+"""
+
+from typing import Any, Optional
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen
 from PySide6.QtWidgets import QGraphicsItem
 
+
 class PointItem(QGraphicsItem):
-    """可编辑的点标注"""
-    
-    def __init__(self, pos=None, radius=3, label="point", group_id=None, parent=None):
+    """可编辑的点标注。
+
+    属性:
+        label: 标签名称
+        attributes: 存储自定义属性（序列化到 flags）
+    """
+
+    def __init__(
+        self,
+        pos: Optional[QPointF] = None,
+        radius: int = 3,
+        label: str = "point",
+        group_id: Optional[int] = None,
+        parent: Optional[QGraphicsItem] = None,
+    ) -> None:
         super().__init__(parent)
-        
+
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self.setFlag(QGraphicsItem.ItemIsFocusable, True)
-        
+
         # 点样式
         self.radius = radius
         self.normal_color = QColor(255, 0, 0, 200)
@@ -22,86 +42,95 @@ class PointItem(QGraphicsItem):
         # 当光标移到点上时使用平移/移动光标
         try:
             from PySide6.QtCore import Qt as _Qt
+
             self.setCursor(_Qt.SizeAllCursor)
         except Exception:
             pass
-        
+
         # 设置位置
         if pos:
             self.setPos(pos)
         else:
             self.setPos(QPointF(0, 0))
-        
+
         # 标注标签
         self.label = label
         # 形状类型
-        self.shape_type = 'point'
-        
+        self.shape_type = "point"
+
         # 所属分组
         self.group_id = group_id
         self.group_item = None
-        
+
         # 用于JSON序列化的唯一ID
         self.item_id = id(self)
         # 可编辑属性字典，序列化到 'flags'
         self.attributes = {}
-        
+
         # 设置Z值，确保点在最上层
         self.setZValue(10)
-    
-    def boundingRect(self):
-        """返回边界矩形"""
-        return QRectF(-self.radius, -self.radius, 2*self.radius, 2*self.radius)
-    
-    def shape(self):
-        """返回精确的形状用于碰撞检测"""
+
+    def boundingRect(self) -> QRectF:
+        """返回边界矩形。"""
+        return QRectF(-self.radius, -self.radius, 2 * self.radius, 2 * self.radius)
+
+    def shape(self) -> QPainterPath:
+        """返回精确的形状用于碰撞检测。"""
         path = QPainterPath()
-        path.addEllipse(-self.radius, -self.radius, 2*self.radius, 2*self.radius)
+        path.addEllipse(-self.radius, -self.radius, 2 * self.radius, 2 * self.radius)
         return path
-    
-    def paint(self, painter, option, widget=None):
-        """绘制点"""
+
+    def paint(self, painter, option, widget=None) -> None:
+        """绘制点。"""
         if self.isSelected():
             self.color = self.selected_color
         else:
             self.color = self.normal_color
-        
+
         painter.setBrush(QBrush(self.color))
         painter.setPen(QPen(Qt.black, 1))
-        painter.drawEllipse(-self.radius, -self.radius, 2*self.radius, 2*self.radius)
-    
-    def itemChange(self, change, value):
-        """处理项变化"""
-        if change in [QGraphicsItem.ItemPositionHasChanged, 
-                     QGraphicsItem.ItemTransformHasChanged]:
+        painter.drawEllipse(-self.radius, -self.radius, 2 * self.radius, 2 * self.radius)
+
+    def itemChange(self, change: Any, value: Any) -> Any:
+        """处理项变化。
+
+        当位置或变换发生变化时，如果所在分组存在则更新分组边界。
+        """
+        if change in [
+            QGraphicsItem.ItemPositionHasChanged,
+            QGraphicsItem.ItemTransformHasChanged,
+        ]:
             # 如果属于分组，更新分组框
-            if hasattr(self, 'group_item') and self.group_item:
+            if hasattr(self, "group_item") and self.group_item:
                 self.group_item.update_bounds()
-                
+
         return super().itemChange(change, value)
-    
-    def to_dict(self):
-        """转换为字典用于JSON序列化"""
+
+    def to_dict(self) -> dict:
+        """转换为字典用于 JSON 序列化（LabelMe shapes 条目）。"""
         return {
-            'label': self.label,
-            'points': [[self.pos().x(), self.pos().y()]],
-            'group_id': self.group_id,
-            'shape_type': 'point',
-            'flags': self.attributes.copy() if self.attributes else {}
+            "label": self.label,
+            "points": [[self.pos().x(), self.pos().y()]],
+            "group_id": self.group_id,
+            "shape_type": "point",
+            "flags": self.attributes.copy() if self.attributes else {},
         }
-    
+
     @classmethod
-    def from_dict(cls, data, scene):
-        """从字典创建点项"""
-        points = data['points']
+    def from_dict(cls, data: dict, scene: Optional[Any] = None) -> Optional["PointItem"]:
+        """从字典创建点项。
+
+        返回 `PointItem` 实例或在数据无效时返回 None。
+        """
+        points = data.get("points", [])
         if len(points) != 1:
             return None
-        
+
         pos = QPointF(points[0][0], points[0][1])
         radius = 3
-        label = data.get('label', 'point')
-        item = cls(pos, radius, label, data.get('group_id'))
+        label = data.get("label", "point")
+        item = cls(pos, radius, label, data.get("group_id"))
         # 恢复自定义属性
-        item.attributes = data.get('flags', {}) or {}
-        
+        item.attributes = data.get("flags", {}) or {}
+
         return item
