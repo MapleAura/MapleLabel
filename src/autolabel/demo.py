@@ -6,14 +6,14 @@ from src.utils.registry import register_module
 @register_module("Demo")
 class DemoAI:
     @staticmethod
-    def Init(cfg: Dict[str, Any]):
-        print("[DemoAI] Init called with cfg:", cfg)
+    def init(cfg: Dict[str, Any]):
+        print("[DemoAI] init called with cfg:", cfg)
 
     @staticmethod
-    def Infer(path: str):
-        print(f"[DemoAI] Infer on {path}")
-        return {"ok": True, "path": path}
+    def infer(path: str, options: Dict[str, Any] | None = None):
+        print(f"[DemoAI] infer on {path} with options: {options}")
+        return {"ok": True, "path": path, "options": options or {}}
 
     @staticmethod
-    def UnInit():
-        print("[DemoAI] UnInit called")
+    def uninit():
+        print("[DemoAI] uninit called")

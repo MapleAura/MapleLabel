@@ -123,7 +123,7 @@ class AIInferThread(QThread):
                 print("Module missing 'infer' callable")
                 return
 
-            result = infer_fn(self.image_path)
+            result = infer_fn(self.image_path, {})
             if isinstance(result, dict) and result:
                 if not os.path.exists(self.temp_dir):
                     os.makedirs(self.temp_dir, exist_ok=True)

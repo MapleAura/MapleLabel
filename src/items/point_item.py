@@ -126,12 +126,14 @@ class PointItem(QGraphicsItem):
 
     def to_dict(self) -> dict:
         """转换为字典用于 JSON 序列化（LabelMe shapes 条目）。"""
+        attrs = self.attributes.copy() if self.attributes else {}
         return {
             "label": self.label,
             "points": [[self.pos().x(), self.pos().y()]],
             "group_id": self.group_id,
             "shape_type": "point",
-            "attrs": self.attributes.copy() if self.attributes else {},
+            "attributes": attrs,
+            "attrs": attrs,
             "flags": {},
         }
 
@@ -150,7 +152,9 @@ class PointItem(QGraphicsItem):
         label = data.get("label", "point")
         item = cls(pos, radius, label, data.get("group_id"))
         # 恢复自定义属性
-        item.attributes = data.get("attrs", None)
+        item.attributes = data.get("attributes", None)
+        if item.attributes is None:
+            item.attributes = data.get("attrs", None)
         if item.attributes is None:
             item.attributes = data.get("flags", {}) or {}
 

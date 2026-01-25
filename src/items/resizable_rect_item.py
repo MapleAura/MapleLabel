@@ -405,13 +405,15 @@ class ResizableRectItem(QGraphicsRectItem):
         """转换为字典用于JSON序列化（LabelMe shapes 条目）。"""
         rect = self.rect()
         x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
+        attrs = self.attributes.copy() if self.attributes else {}
         # LabelMe rectangle: use two points [top-left, bottom-right]
         return {
             "label": self.label,
             "points": [[x, y], [x + w, y + h]],
             "group_id": self.group_id,
             "shape_type": "rectangle",
-            "attrs": self.attributes.copy() if self.attributes else {},
+            "attributes": attrs,
+            "attrs": attrs,
             "flags": {},
         }
 
@@ -439,8 +441,10 @@ class ResizableRectItem(QGraphicsRectItem):
         rect = QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
         label = data.get("label", "rect")
         item = cls(rect, label, data.get("group_id"))
-        # 恢复自定义属性：优先使用 'attrs'，兼容 'flags'
-        item.attributes = data.get("attrs", None)
+        # 恢复自定义属性：优先使用 'attributes'/'attrs'，兼容 'flags'
+        item.attributes = data.get("attributes", None)
+        if item.attributes is None:
+            item.attributes = data.get("attrs", None)
         if item.attributes is None:
             item.attributes = data.get("flags", {}) or {}
 

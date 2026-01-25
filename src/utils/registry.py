@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, List, Optional
 class ModuleEntry:
     name: str
     init: Callable[[Dict[str, Any]], Any]
-    infer: Callable[[str], Any]
+    infer: Callable[[str, Optional[Dict[str, Any]]], Any]
     uninit: Callable[[], Any]
     initialized: bool = False
 
@@ -17,15 +17,15 @@ REGISTRY: Dict[str, ModuleEntry] = {}
 
 
 def register_module(name: str):
-    """装饰器：注册一个包含 Init/Infer/UnInit 的类。"""
+    """装饰器：注册一个包含 init/infer/uninit（兼容大小写）的类。"""
 
     def decorator(obj):
-        init = getattr(obj, "Init", None)
-        infer = getattr(obj, "Infer", None)
-        uninit = getattr(obj, "UnInit", None)
+        init = getattr(obj, "init", None) or getattr(obj, "Init", None)
+        infer = getattr(obj, "infer", None) or getattr(obj, "Infer", None)
+        uninit = getattr(obj, "uninit", None) or getattr(obj, "UnInit", None)
         if not callable(init) or not callable(infer) or not callable(uninit):
             raise ValueError(
-                f"模块 {name} 必须提供可调用的 Init/Infer/UnInit"
+                f"模块 {name} 必须提供可调用的 init/Infer/uninit (大小写均可)"
             )
         REGISTRY[name] = ModuleEntry(name=name, init=init, infer=infer, uninit=uninit)
         return obj

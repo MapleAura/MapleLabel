@@ -10,6 +10,9 @@ import onnxruntime as ort
 from src.utils.registry import register_module
 
 
+ANNOTATION_VERSION = "maplelabel-1.0"
+
+
 def distance2bbox(points: np.ndarray, distance: np.ndarray, max_shape: Optional[Tuple[int, int]] = None) -> np.ndarray:
     x1 = points[:, 0] - distance[:, 0]
     y1 = points[:, 1] - distance[:, 1]
@@ -78,6 +81,7 @@ def _make_labelme(
                 "description": "",
                 "shape_type": "rectangle",
                 "flags": {},
+                "attributes": {},
                 "mask": None,
                 "score": float(score),
             }
@@ -93,13 +97,14 @@ def _make_labelme(
                         "description": "",
                         "shape_type": "point",
                         "flags": {},
+                        "attributes": {},
                         "mask": None,
                     }
                 )
         group_id += 1
 
     return {
-        "version": "5.10.1",
+        "version": ANNOTATION_VERSION,
         "flags": {},
         "shapes": shapes,
         "imagePath": os.path.basename(image_path),
@@ -311,7 +316,7 @@ class FaceLandmark:
     input_size: Optional[Tuple[int, int]] = None
 
     @staticmethod
-    def Init(cfg: Dict[str, Any]):
+    def init(cfg: Dict[str, Any]):
         if FaceLandmark.detector is not None:
             return True
 
@@ -337,7 +342,7 @@ class FaceLandmark:
         return True
 
     @staticmethod
-    def Infer(path: str):
+    def infer(path: str, options: Dict[str, Any] | None = None):
         if FaceLandmark.detector is None:
             return {}
 
@@ -376,5 +381,5 @@ class FaceLandmark:
         return labelme
 
     @staticmethod
-    def UnInit():
+    def uninit():
         FaceLandmark.detector = None
