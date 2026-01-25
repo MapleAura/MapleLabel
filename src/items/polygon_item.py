@@ -21,6 +21,7 @@ class PolygonVertex(QGraphicsEllipseItem):
         self.setFlag(QGraphicsEllipseItem.ItemSendsGeometryChanges)
         self.setFlag(QGraphicsEllipseItem.ItemIsSelectable)
         self.radius = radius
+        self.selected_radius_extra = 2
         self.parent_polygon = parent
         self.setZValue(2)  # 顶点在最上层
         # 光标悬停在顶点上显示平移光标
@@ -182,6 +183,16 @@ class PolygonItem(QGraphicsPolygonItem):
             painter.setBrush(Qt.NoBrush)
             rect = self.boundingRect()
             painter.drawRect(rect)
+
+        # 放大已选顶点的绘制半径
+        for vertex in self.vertices:
+            if vertex.isSelected():
+                painter.save()
+                painter.setPen(QPen(Qt.yellow, 1))
+                painter.setBrush(QBrush(Qt.yellow))
+                r = vertex.radius + vertex.selected_radius_extra
+                painter.drawEllipse(vertex.pos(), r, r)
+                painter.restore()
 
     def boundingRect(self):
         """返回边界矩形"""

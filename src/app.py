@@ -273,6 +273,7 @@ class MapleLabelWindow(QMainWindow):
         self.elements_table.setHorizontalHeaderLabels(["类型", "组别", "坐标", "属性"])
         self.elements_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.elements_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.elements_table.setSelectionMode(QTableWidget.SingleSelection)
         self.elements_table.setShowGrid(False)  # 少线表：去除竖线和默认网格
         self.elements_table.setStyleSheet("color: #D4D4D4;")
         self.elements_table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
@@ -324,6 +325,10 @@ class MapleLabelWindow(QMainWindow):
 
         # 存储当前 elements 表格行对应的 scene item 引用
         self.elements_row_items = []
+        self._syncing_selection = False
+
+        # 绑定概览表格与画布的选中同步
+        self.elements_table.itemSelectionChanged.connect(self.on_elements_selection_changed)
 
         # 状态栏
         self.status_bar = QStatusBar()
@@ -1374,7 +1379,12 @@ class MapleLabelWindow(QMainWindow):
 
     def on_selection_changed(self) -> None:
         """场景选中项变化时更新属性面板。"""
+        if self._syncing_selection:
+            return
+        self._syncing_selection = True
         self.update_property_panel()
+        self._select_elements_row_for_scene_selection()
+        self._syncing_selection = False
 
     def update_property_panel(self) -> None:
         """根据当前选中项在属性面板显示可编辑属性（下拉列表）。"""
@@ -1487,6 +1497,10 @@ class MapleLabelWindow(QMainWindow):
 
     def update_elements_panel(self, *args, **kwargs) -> None:
         """更新右侧只读元素表，展示当前图片所有元素的信息。"""
+        # 记录当前场景选中的第一个元素，以便重建表后恢复行选中
+        selected_items = self.canvas.scene.selectedItems()
+        selected_ref = selected_items[0] if selected_items else None
+
         # 清空表格
         self.elements_table.setRowCount(0)
         self.elements_row_items = []
@@ -1559,4 +1573,59 @@ class MapleLabelWindow(QMainWindow):
             # 记录对应的 scene item
             self.elements_row_items.append(ref_item)
 
-        pass
+        # 恢复表格选中状态以与场景保持同步
+        if selected_ref is not None:
+            try:
+                idx = self.elements_row_items.index(selected_ref)
+                self._syncing_selection = True
+                self.elements_table.selectRow(idx)
+                self._syncing_selection = False
+            except ValueError:
+                # 选中的场景元素可能已被删除
+                self._syncing_selection = False
+                pass
+
+    def on_elements_selection_changed(self) -> None:
+        """当概览表格选中变化时，同步到画布选中。"""
+        if self._syncing_selection:
+            return
+        self._syncing_selection = True
+        try:
+            selected_ranges = self.elements_table.selectedRanges()
+            if not selected_ranges:
+                self._syncing_selection = False
+                return
+            row = selected_ranges[0].topRow()
+            if 0 <= row < len(self.elements_row_items):
+                target = self.elements_row_items[row]
+                # 清除其他选中，选中目标
+                try:
+                    self.canvas.scene.clearSelection()
+                except Exception:
+                    pass
+                try:
+                    target.setSelected(True)
+                except Exception:
+                    pass
+                # 将视图聚焦到选中项（可选）
+                try:
+                    self.canvas.centerOn(target)
+                except Exception:
+                    pass
+                # 更新属性面板坐标
+                self.update_property_panel()
+        finally:
+            self._syncing_selection = False
+
+    def _select_elements_row_for_scene_selection(self) -> None:
+        """根据场景选中状态更新概览表格行选中。"""
+        selected = self.canvas.scene.selectedItems()
+        if not selected:
+            self.elements_table.clearSelection()
+            return
+        item = selected[0]
+        try:
+            idx = self.elements_row_items.index(item)
+            self.elements_table.selectRow(idx)
+        except ValueError:
+            self.elements_table.clearSelection()

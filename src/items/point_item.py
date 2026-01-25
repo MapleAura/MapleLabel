@@ -35,6 +35,7 @@ class PointItem(QGraphicsItem):
 
         # 点样式
         self.radius = radius
+        self.selected_radius_extra = 2  # 选中时放大
         self.default_normal_color = QColor(255, 0, 0, 200)
         self.default_selected_color = QColor(255, 255, 0, 200)
         self.normal_color = QColor(self.default_normal_color)
@@ -90,24 +91,28 @@ class PointItem(QGraphicsItem):
 
     def boundingRect(self) -> QRectF:
         """返回边界矩形。"""
-        return QRectF(-self.radius, -self.radius, 2 * self.radius, 2 * self.radius)
+        max_r = self.radius + self.selected_radius_extra
+        return QRectF(-max_r, -max_r, 2 * max_r, 2 * max_r)
 
     def shape(self) -> QPainterPath:
         """返回精确的形状用于碰撞检测。"""
+        max_r = self.radius + self.selected_radius_extra
         path = QPainterPath()
-        path.addEllipse(-self.radius, -self.radius, 2 * self.radius, 2 * self.radius)
+        path.addEllipse(-max_r, -max_r, 2 * max_r, 2 * max_r)
         return path
 
     def paint(self, painter, option, widget=None) -> None:
         """绘制点。"""
         if self.isSelected():
             self.color = self.selected_color
+            r = self.radius + self.selected_radius_extra
         else:
             self.color = self.normal_color
+            r = self.radius
 
         painter.setBrush(QBrush(self.color))
         painter.setPen(QPen(Qt.black, 1))
-        painter.drawEllipse(-self.radius, -self.radius, 2 * self.radius, 2 * self.radius)
+        painter.drawEllipse(-r, -r, 2 * r, 2 * r)
 
     def itemChange(self, change: Any, value: Any) -> Any:
         """处理项变化。
