@@ -61,8 +61,10 @@ class PolygonItem(QGraphicsPolygonItem):
         self.vertex_radius = 3
 
         # 默认样式
-        self.setPen(QPen(QColor(0, 255, 0), 1))  # labelme 通常用绿色
-        self.setBrush(QBrush(QColor(0, 255, 0, 50)))  # 半透明绿色填充
+        self.default_pen_color = QColor(0, 255, 0)
+        self.default_brush_color = QColor(0, 255, 0, 50)
+        self.setPen(QPen(self.default_pen_color, 1))  # labelme 通常用绿色
+        self.setBrush(QBrush(self.default_brush_color))  # 半透明绿色填充
 
         self.setFlag(QGraphicsPolygonItem.ItemIsMovable, False)
         self.setFlag(QGraphicsPolygonItem.ItemIsSelectable, True)
@@ -200,6 +202,22 @@ class PolygonItem(QGraphicsPolygonItem):
             max_x - min_x + 2 * margin,
             max_y - min_y + 2 * margin,
         )
+
+    def apply_group_color(self, color: QColor) -> None:
+        """Apply a group color to the polygon (pen + translucent fill)."""
+        line_color = QColor(color)
+        line_color.setAlpha(255)
+        fill_color = QColor(color)
+        fill_color.setAlpha(50)
+        self.setPen(QPen(line_color, self.pen().width()))
+        self.setBrush(QBrush(fill_color))
+        self.update()
+
+    def reset_color(self) -> None:
+        """Restore default green colors after ungrouping."""
+        self.setPen(QPen(self.default_pen_color, self.pen().width()))
+        self.setBrush(QBrush(self.default_brush_color))
+        self.update()
 
     def to_dict(self):
         """

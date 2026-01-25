@@ -18,10 +18,12 @@ class ResizableRectItem(QGraphicsRectItem):
         super().__init__(rect, parent)
 
         # 设置矩形的样式
-        self.normal_pen = QPen(QColor(0, 255, 0), 1)
+        self.default_pen_color = QColor(0, 255, 0)
+        self.default_brush_color = QColor(0, 255, 0, 50)
+        self.normal_pen = QPen(self.default_pen_color, 1)
         self.selected_pen = QPen(QColor(255, 165, 0), 1)
         self.setPen(self.normal_pen)
-        self.setBrush(QBrush(QColor(0, 255, 0, 50)))
+        self.setBrush(QBrush(self.default_brush_color))
 
         # 允许矩形被选择和移动
         self.setFlag(QGraphicsRectItem.ItemIsSelectable, True)
@@ -73,6 +75,26 @@ class ResizableRectItem(QGraphicsRectItem):
         self._moving = False
         self._move_start_scene_pos = None
         self._move_start_rect = None
+
+    def apply_group_color(self, color: QColor) -> None:
+        """Apply a group color to the rectangle (border + translucent fill)."""
+        line_color = QColor(color)
+        line_color.setAlpha(255)
+        fill_color = QColor(color)
+        fill_color.setAlpha(50)
+        self.normal_pen = QPen(line_color, self.normal_pen.width())
+        self.setPen(self.normal_pen)
+        self.setBrush(QBrush(fill_color))
+        self.update_handles()
+        self.update()
+
+    def reset_color(self) -> None:
+        """Restore default green colors after ungrouping."""
+        self.normal_pen = QPen(self.default_pen_color, self.normal_pen.width())
+        self.setPen(self.normal_pen)
+        self.setBrush(QBrush(self.default_brush_color))
+        self.update_handles()
+        self.update()
 
     def update_handles(self) -> None:
         """更新手柄位置 - 将手柄放在矩形边缘上。"""

@@ -11,14 +11,14 @@ class GroupItem(QGraphicsRectItem):
         if rect:
             self.setRect(rect)
 
-        # 分组框样式 - 紫色虚线
-        self.group_pen = QPen(QColor(255, 0, 255), 2, Qt.DashLine)
-        self.selected_pen = QPen(QColor(255, 165, 0), 2, Qt.DashLine)
+        # 分组框样式 - 默认隐藏，颜色交给分组内元素呈现
+        self.group_pen = QPen(Qt.transparent, 0)
+        self.selected_pen = QPen(Qt.transparent, 0)
         self.setPen(self.group_pen)
         self.setBrush(QBrush(Qt.NoBrush))
 
         # 允许选择（用于取消分组），但不允许移动
-        self.setFlag(QGraphicsRectItem.ItemIsSelectable, True)
+        self.setFlag(QGraphicsRectItem.ItemIsSelectable, False)
         self.setFlag(QGraphicsRectItem.ItemIsMovable, False)
         self.setFlag(QGraphicsRectItem.ItemSendsGeometryChanges, True)
 

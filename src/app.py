@@ -20,8 +20,9 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut, QColor
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QComboBox,
     QFileDialog,
@@ -35,8 +36,11 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QSplitter,
     QStatusBar,
+    QStyle,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
+    QStyledItemDelegate,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -136,6 +140,46 @@ class AIInferThread(QThread):
             except Exception:
                 pass
 
+
+class GroupSeparatedDelegate(QStyledItemDelegate):
+    """自定义委托：居中显示，并按组绘制少线表的横线。"""
+
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.displayAlignment = Qt.AlignCenter
+
+        style = opt.widget.style() if opt.widget else QApplication.instance().style()
+        style.drawControl(QStyle.CE_ItemViewItem, opt, painter, opt.widget)
+
+        # 仅绘制横线：同组不画分隔线，无组(-1)保持分隔
+        model = index.model()
+        row = index.row()
+        gid_index = model.index(row, 1)
+        gid_curr = model.data(gid_index)
+        gid_next = None
+        if row < model.rowCount() - 1:
+            gid_next = model.data(model.index(row + 1, 1))
+
+        # 表格里使用字符串保存 gid，未分组为 "-1"
+        same_group = (
+            isinstance(gid_curr, str)
+            and isinstance(gid_next, str)
+            and gid_curr == gid_next
+            and gid_curr != "-1"
+        )
+
+        # 仅在该单元格绘制一条底部分隔线，颜色更亮以可见
+        if not same_group:
+            painter.save()
+            pen = painter.pen()
+            pen.setColor(QColor(60, 60, 60))  # 深灰分隔线，背景对比明显
+            pen.setWidth(1)
+            painter.setPen(pen)
+            y = opt.rect.bottom() - 1
+            painter.drawLine(opt.rect.left(), y, opt.rect.right(), y)
+            painter.restore()
+
 class MapleLabelWindow(QMainWindow):
     """主窗口类，封装 UI 布局与用户交互逻辑。"""
 
@@ -225,12 +269,34 @@ class MapleLabelWindow(QMainWindow):
         self.elements_layout = QVBoxLayout(self.elements_panel)
         self.elements_layout.addWidget(QLabel("概览"))
         self.elements_table = QTableWidget()
-        self.elements_table.setColumnCount(3)
-        self.elements_table.setHorizontalHeaderLabels(["类型", "坐标", "属性"])
+        self.elements_table.setColumnCount(4)
+        self.elements_table.setHorizontalHeaderLabels(["类型", "组别", "坐标", "属性"])
         self.elements_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.elements_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.elements_table.setShowGrid(False)  # 少线表：去除竖线和默认网格
         self.elements_table.setStyleSheet("color: #D4D4D4;")
+        self.elements_table.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
+        self.elements_table.setItemDelegate(GroupSeparatedDelegate(self.elements_table))
         self.elements_table.horizontalHeader().setStretchLastSection(True)
+        # 字体整体缩小一号（表格和表头）
+        try:
+            f = self.elements_table.font()
+            if f.pointSize() > 1:
+                f.setPointSize(f.pointSize() - 1)
+                self.elements_table.setFont(f)
+            hf = self.elements_table.horizontalHeader().font()
+            if hf.pointSize() > 1:
+                hf.setPointSize(hf.pointSize() - 1)
+                self.elements_table.horizontalHeader().setFont(hf)
+        except Exception:
+            pass
+        # 固定行高，避免字体缩小后行高过窄
+        try:
+            vh = self.elements_table.verticalHeader()
+            vh.setDefaultSectionSize(24)
+            vh.setMinimumSectionSize(20)
+        except Exception:
+            pass
         self.elements_layout.addWidget(self.elements_table)
 
         # 将三个面板按顺序加入右侧容器：属性 / 元素列表 / 文件列表
@@ -319,6 +385,7 @@ class MapleLabelWindow(QMainWindow):
                 event.accept()
             elif reply == QMessageBox.Discard:
                 # 不保存，直接退出
+                self._stop_temp_watcher()
                 self.canvas.clear_temp_files(self.temp_dir)
                 event.accept()
             else:
@@ -326,6 +393,7 @@ class MapleLabelWindow(QMainWindow):
                 event.ignore()
         else:
             # 没有未保存的更改，直接退出
+            self._stop_temp_watcher()
             self.canvas.clear_temp_files(self.temp_dir)
             event.accept()
 
@@ -1291,6 +1359,19 @@ class MapleLabelWindow(QMainWindow):
         # 目录变化时可能包含新增或删除的 temp_*.json，直接刷新所有项状态
         self.update_file_list_status()
 
+    def _stop_temp_watcher(self) -> None:
+        """在退出前解除对临时目录的监听，避免目录被删除时的权限错误。"""
+        if not hasattr(self, "temp_watcher"):
+            return
+        try:
+            for p in list(self.temp_watcher.directories()):
+                try:
+                    self.temp_watcher.removePath(p)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def on_selection_changed(self) -> None:
         """场景选中项变化时更新属性面板。"""
         self.update_property_panel()
@@ -1415,6 +1496,7 @@ class MapleLabelWindow(QMainWindow):
             rows.append(
                 (
                     "rectangle",
+                    getattr(rect, "group_id", None),
                     self._format_item_coords(rect),
                     getattr(rect, "attributes", {}) or {},
                     rect,
@@ -1425,6 +1507,7 @@ class MapleLabelWindow(QMainWindow):
             rows.append(
                 (
                     "point",
+                    getattr(pt, "group_id", None),
                     self._format_item_coords(pt),
                     getattr(pt, "attributes", {}) or {},
                     pt,
@@ -1435,27 +1518,44 @@ class MapleLabelWindow(QMainWindow):
             rows.append(
                 (
                     "polygon",
+                    getattr(poly, "group_id", None),
                     self._format_item_coords(poly),
                     getattr(poly, "attributes", {}) or getattr(poly, "flags", {}) or {},
                     poly,
                 )
             )
 
+        # 按分组排序：同组元素连续显示，未分组(-1/None)放最后
+        def _group_sort_key(r):
+            gid = r[1]
+            return (gid if gid is not None else 10**9, r[0])
+
+        rows = sorted(rows, key=_group_sort_key)
+
         self.elements_table.setRowCount(len(rows))
-        for i, (t, coord, attrs, ref_item) in enumerate(rows):
+        for i, (t, gid, coord, attrs, ref_item) in enumerate(rows):
             type_item = QTableWidgetItem(t)
+            gid_item = QTableWidgetItem(str(gid if gid is not None else -1))
             coord_item = QTableWidgetItem(coord)
             attrs_text = json.dumps(attrs, ensure_ascii=False)
             attrs_item = QTableWidgetItem(attrs_text)
 
+            # 居中显示
+            type_item.setTextAlignment(Qt.AlignCenter)
+            gid_item.setTextAlignment(Qt.AlignCenter)
+            coord_item.setTextAlignment(Qt.AlignCenter)
+            attrs_item.setTextAlignment(Qt.AlignCenter)
+
             # 颜色调整
             type_item.setForeground(self.status_bar.palette().windowText())
+            gid_item.setForeground(self.status_bar.palette().windowText())
             coord_item.setForeground(self.status_bar.palette().windowText())
             attrs_item.setForeground(self.status_bar.palette().windowText())
 
             self.elements_table.setItem(i, 0, type_item)
-            self.elements_table.setItem(i, 1, coord_item)
-            self.elements_table.setItem(i, 2, attrs_item)
+            self.elements_table.setItem(i, 1, gid_item)
+            self.elements_table.setItem(i, 2, coord_item)
+            self.elements_table.setItem(i, 3, attrs_item)
             # 记录对应的 scene item
             self.elements_row_items.append(ref_item)
 

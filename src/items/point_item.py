@@ -35,8 +35,10 @@ class PointItem(QGraphicsItem):
 
         # 点样式
         self.radius = radius
-        self.normal_color = QColor(255, 0, 0, 200)
-        self.selected_color = QColor(255, 255, 0, 200)
+        self.default_normal_color = QColor(255, 0, 0, 200)
+        self.default_selected_color = QColor(255, 255, 0, 200)
+        self.normal_color = QColor(self.default_normal_color)
+        self.selected_color = QColor(self.default_selected_color)
         self.color = self.normal_color
 
         # 当光标移到点上时使用平移/移动光标
@@ -69,6 +71,22 @@ class PointItem(QGraphicsItem):
 
         # 设置Z值，确保点在最上层
         self.setZValue(10)
+
+    def apply_group_color(self, color: QColor) -> None:
+        """Apply a group color to the point and refresh its appearance."""
+        group_color = QColor(color)
+        group_color.setAlpha(200)
+        self.normal_color = group_color
+        self.selected_color = QColor(group_color)
+        self.color = self.selected_color if self.isSelected() else self.normal_color
+        self.update()
+
+    def reset_color(self) -> None:
+        """Restore default colors after ungrouping."""
+        self.normal_color = QColor(self.default_normal_color)
+        self.selected_color = QColor(self.default_selected_color)
+        self.color = self.selected_color if self.isSelected() else self.normal_color
+        self.update()
 
     def boundingRect(self) -> QRectF:
         """返回边界矩形。"""

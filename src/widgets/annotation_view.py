@@ -6,11 +6,13 @@ IO 层的对接（读取/保存 LabelMe 格式）。
 """
 
 import os
+import random
 import shutil
 from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
+    QColor,
     QKeyEvent,
     QMouseEvent,
     QPainter,
@@ -126,10 +128,35 @@ class AnnotationView(QGraphicsView):
         """从 JSON 文件加载标注（委托到 IO 层）。"""
         return io_load_annotations_from_json(self, json_path)
 
-    def _create_group_from_items(self, group_id: int, items: List[Any]) -> "GroupItem":
+    def _generate_group_color(self) -> QColor:
+        """生成一组易区分的随机颜色。"""
+        hue = random.randint(0, 359)
+        return QColor.fromHsv(hue, 200, 255)
+
+    def _apply_group_color(self, items: List[Any], color: QColor) -> None:
+        """为分组内元素应用统一颜色。"""
+        for item in items:
+            if hasattr(item, "apply_group_color"):
+                try:
+                    item.apply_group_color(color)
+                except Exception:
+                    pass
+
+    def _reset_item_color(self, item: Any) -> None:
+        """取消分组时恢复元素默认颜色。"""
+        if hasattr(item, "reset_color"):
+            try:
+                item.reset_color()
+            except Exception:
+                pass
+
+    def _create_group_from_items(self, group_id: int, items: List[Any], color: Optional[QColor] = None) -> "GroupItem":
         """从项目列表创建分组并返回创建的 `GroupItem` 对象。"""
-        # 创建分组框
+        group_color = color or self._generate_group_color()
+
+        # 创建分组框（隐藏，只用来维护边界）
         group_item = GroupItem()
+        group_item.setVisible(False)
         group_item.group_items = items
         group_item.group_id = group_id
         group_item.update_bounds()
@@ -139,8 +166,11 @@ class AnnotationView(QGraphicsView):
         for item in items:
             item.group_item = group_item
 
+        # 应用分组颜色到元素
+        self._apply_group_color(items, group_color)
+
         # 存储分组
-        self.groups[group_id] = {"items": items, "group_item": group_item}
+        self.groups[group_id] = {"items": items, "group_item": group_item, "color": group_color}
 
         return group_item
 
@@ -472,9 +502,13 @@ class AnnotationView(QGraphicsView):
         if len(valid_items) < 2:
             return False
 
-        # 创建新组
+        # 已在分组中的元素不重复分组，避免 group_id 增长
+        for item in valid_items:
+            if hasattr(item, "group_id") and item.group_id is not None:
+                return False
+
+        # 创建新组（仅在确认可分组后再占用 id）
         group_id = self.next_group_id
-        self.next_group_id += 1
 
         # 收集组内元素
         group_items = []
@@ -489,14 +523,12 @@ class AnnotationView(QGraphicsView):
 
         # 创建分组
         self._create_group_from_items(group_id, group_items)
+        self.next_group_id += 1
 
-        # 取消所有元素的选择状态
+        # 保持已有选择状态，确保分组框不被选中
         for item in self.scene.selectedItems():
-            item.setSelected(False)
-
-        # 只选中分组框
-        group_item = self.groups[group_id]["group_item"]
-        group_item.setSelected(True)
+            if isinstance(item, GroupItem):
+                item.setSelected(False)
 
         self.set_modified(True)
         return True
@@ -507,11 +539,22 @@ class AnnotationView(QGraphicsView):
         if not selected_items:
             return
 
+        group_ids = set()
         for item in selected_items:
-            if isinstance(item, GroupItem):
-                # 取消分组
-                self.remove_group(item)
-                self.set_modified(True)
+            if isinstance(item, GroupItem) and item.group_id is not None:
+                group_ids.add(item.group_id)
+            elif hasattr(item, "group_id") and item.group_id is not None:
+                group_ids.add(item.group_id)
+
+        changed = False
+        for gid in group_ids:
+            group = self.groups.get(gid)
+            if group:
+                self.remove_group(group["group_item"])
+                changed = True
+
+        if changed:
+            self.set_modified(True)
 
     def remove_from_group(self, item):
         """从分组中移除元素"""
@@ -527,6 +570,7 @@ class AnnotationView(QGraphicsView):
                 group["items"].remove(item)
                 item.group_id = None
                 item.group_item = None
+                self._reset_item_color(item)
 
                 # 如果分组中还有元素，更新分组框
                 if group["items"]:
@@ -549,6 +593,7 @@ class AnnotationView(QGraphicsView):
             for item in group["items"]:
                 item.group_id = None
                 item.group_item = None
+                self._reset_item_color(item)
 
             # 从场景中删除分组框
             if group_item in self.scene.items():
