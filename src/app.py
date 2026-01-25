@@ -7,9 +7,19 @@
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QSize, Qt, QFileSystemWatcher
+from PySide6.QtCore import (
+    QFileSystemWatcher,
+    QObject,
+    QRunnable,
+    QThread,
+    QThreadPool,
+    QTimer,
+    QSize,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -30,13 +40,101 @@ from PySide6.QtWidgets import (
     QToolButton,
     QVBoxLayout,
     QWidget,
+    QCheckBox,
 )
 
 from .items import GroupItem, PointItem, PolygonItem, ResizableRectItem
 from .utils import IconManager
 from .utils.undo_manager import UndoRedoManager
 from .widgets import AnnotationView, CollapsiblePanel, FileListWidgetItem
+from .utils.registry import (
+    discover_modules,
+    get_module,
+    init_module,
+    list_modules,
+    uninit_module,
+)
 
+
+class AIInferWorkerSignals(QObject):
+    finished = Signal(str, str, bool, str)
+
+
+class AIInferWorker(QRunnable):
+    def __init__(self, module_name: str, image_path: str, temp_dir: str):
+        super().__init__()
+        self.module_name = module_name
+        self.image_path = image_path
+        self.temp_dir = temp_dir
+        self.signals = AIInferWorkerSignals()
+
+    def run(self):
+        ok = False
+        temp_path = ""
+        try:
+            entry = get_module(self.module_name)
+            if entry is None:
+                return
+            infer_fn = entry.infer
+            result = infer_fn(self.image_path, {})
+            if isinstance(result, dict) and result:
+                # 确保 temp 目录存在
+                if not os.path.exists(self.temp_dir):
+                    os.makedirs(self.temp_dir, exist_ok=True)
+                temp_name = f"temp_{os.path.basename(self.image_path)}.json"
+                temp_path = os.path.join(self.temp_dir, temp_name)
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+                ok = True
+        except Exception:
+            ok = False
+        finally:
+            try:
+                self.signals.finished.emit(self.image_path, temp_path, ok, self.module_name)
+            except Exception:
+                pass
+
+
+class AIInferThread(QThread):
+    finished = Signal(str, str, bool, str)
+
+    def __init__(self, module_name: str, image_path: str, temp_dir: str, parent: Optional[QObject] = None):
+        super().__init__(parent)
+        self.module_name = module_name
+        self.image_path = image_path
+        self.temp_dir = temp_dir
+
+    def run(self):
+        
+        ok = False
+        temp_path = ""
+        try:
+            entry = get_module(self.module_name)
+            if entry is None:
+                print("Module is not exist")
+                return
+            # 与 QRunnable 版本保持一致：使用模块的 infer(path, options) 接口
+            infer_fn = getattr(entry, "infer", None)
+            if infer_fn is None:
+                print("Module missing 'infer' callable")
+                return
+
+            result = infer_fn(self.image_path)
+            if isinstance(result, dict) and result:
+                if not os.path.exists(self.temp_dir):
+                    os.makedirs(self.temp_dir, exist_ok=True)
+                temp_name = f"temp_{os.path.basename(self.image_path)}.json"
+                temp_path = os.path.join(self.temp_dir, temp_name)
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+                ok = True
+        except Exception:
+            ok = False
+        finally:
+            try:
+                self.finished.emit(self.image_path, temp_path, ok, self.module_name)
+            except Exception:
+                pass
 
 class MapleLabelWindow(QMainWindow):
     """主窗口类，封装 UI 布局与用户交互逻辑。"""
@@ -195,6 +293,12 @@ class MapleLabelWindow(QMainWindow):
         # 创建 AI 悬浮面板
         self.create_ai_panel()
 
+        # AI 预标注队列
+        self.ai_thread_pool = QThreadPool.globalInstance()
+        self.ai_infer_queue: List[Tuple[bool, str, str]] = []  # (priority, path, module)
+        self.ai_infer_running = False
+        self.ai_scheduled = set()
+
         # 绑定场景选择变化，用于更新属性面板
         self.canvas.scene.selectionChanged.connect(self.on_selection_changed)
 
@@ -339,7 +443,7 @@ class MapleLabelWindow(QMainWindow):
         self.ai_panel.setWindowTitle("AI 面板")
         self.ai_panel.setAttribute(Qt.WA_DeleteOnClose, False)
         self.ai_panel.setWindowFlag(Qt.WindowStaysOnTopHint, True)
-        self.ai_panel.setFixedSize(360, 220)
+        self.ai_panel.setFixedSize(420, 320)
 
         layout = QVBoxLayout(self.ai_panel)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -348,23 +452,30 @@ class MapleLabelWindow(QMainWindow):
         header_layout = QHBoxLayout()
         header_label = QLabel("AI 工具")
         header_label.setStyleSheet("color: #D4D4D4; font-weight: bold;")
-        close_btn = QToolButton()
-        close_btn.setText("X")
-        close_btn.setToolTip("关闭")
-        close_btn.clicked.connect(self.ai_panel.hide)
+        refresh_btn = QToolButton()
+        refresh_btn.setText("刷新")
+        refresh_btn.setToolTip("重新扫描模块")
+        refresh_btn.clicked.connect(self.refresh_ai_modules)
+
+        run_btn = QToolButton()
+        run_btn.setText("推理当前")
+        run_btn.setToolTip("对当前图像立即推理（即使已有标注也会覆盖临时标注）")
+        run_btn.clicked.connect(lambda: self.run_ai_now())
 
         header_layout.addWidget(header_label)
         header_layout.addStretch()
-        header_layout.addWidget(close_btn)
-
-        body_label = QLabel("0")
-        body_label.setAlignment(Qt.AlignCenter)
-        body_label.setStyleSheet("color: #D4D4D4; font-size: 24px;")
+        header_layout.addWidget(run_btn)
+        header_layout.addWidget(refresh_btn)
 
         layout.addLayout(header_layout)
-        layout.addStretch()
-        layout.addWidget(body_label)
-        layout.addStretch()
+
+        # 模块列表区域
+        self.ai_modules_layout = QVBoxLayout()
+        self.ai_modules_layout.setSpacing(6)
+        layout.addLayout(self.ai_modules_layout)
+
+        self.ai_module_checkboxes = {}
+        self.refresh_ai_modules()
 
         self.ai_panel.hide()
 
@@ -385,6 +496,144 @@ class MapleLabelWindow(QMainWindow):
         self.ai_panel.show()
         self.ai_panel.raise_()
         self.ai_panel.activateWindow()
+
+    def refresh_ai_modules(self) -> None:
+        """重新扫描并刷新 AI 模块列表。"""
+        try:
+            discover_modules()
+        except Exception:
+            pass
+
+        # 清空旧控件
+        for i in reversed(range(self.ai_modules_layout.count())):
+            item = self.ai_modules_layout.itemAt(i)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+            self.ai_modules_layout.removeItem(item)
+        self.ai_module_checkboxes.clear()
+
+        # 添加新模块条目
+        for entry in list_modules():
+            cb = QCheckBox(entry.name)
+            cb.setChecked(entry.initialized)
+            cb.setStyleSheet("color: #D4D4D4;")
+            cb.toggled.connect(lambda checked, n=entry.name: self.on_ai_toggle(n, checked))
+            self.ai_modules_layout.addWidget(cb)
+            self.ai_module_checkboxes[entry.name] = cb
+
+        self.ai_modules_layout.addStretch()
+
+    def on_ai_toggle(self, name: str, checked: bool) -> None:
+        """勾选调用 Init，取消勾选调用 UnInit。"""
+        ok = False
+        if checked:
+            ok = init_module(name, {})
+            self.status_bar.showMessage(f"AI模块已初始化: {name}")
+        else:
+            ok = uninit_module(name)
+            self.status_bar.showMessage(f"AI模块已卸载: {name}")
+        if not ok:
+            QMessageBox.warning(self, "AI模块", ("初始化失败" if checked else "卸载失败"))
+
+        # 初始化成功后尝试为当前图像和所有缺失标注的图像排队预标注
+        if checked and ok:
+            if self.current_image:
+                self.schedule_ai_autoinfer(self.current_image, priority=True)
+            self.schedule_missing_annotations_for_all()
+
+    # ---------------- AI 预标注队列 -----------------
+    def _get_first_active_module(self) -> Optional[str]:
+        for entry in list_modules():
+            if entry.initialized:
+                return entry.name
+        return None
+
+    def schedule_ai_autoinfer(self, image_path: str, priority: bool = False, force: bool = False) -> None:
+        """如果缺少标注则排队异步预标注；force=True 时无论是否已有标注都排队。"""
+        if not image_path:
+            return
+        module_name = self._get_first_active_module()
+        if not module_name:
+            return
+
+        base = os.path.basename(image_path)
+        temp_path = os.path.join(self.temp_dir, f"temp_{base}.json")
+        json_path = os.path.splitext(image_path)[0] + ".json"
+        if not force and (os.path.exists(temp_path) or os.path.exists(json_path)):
+            return
+        if image_path in self.ai_scheduled:
+            return
+
+        item = (priority, image_path, module_name)
+        if priority:
+            self.ai_infer_queue.insert(0, item)
+        else:
+            self.ai_infer_queue.append(item)
+        self.ai_scheduled.add(image_path)
+        self._start_next_ai_task()
+
+    def _start_next_ai_task(self) -> None:
+        if self.ai_infer_running or not self.ai_infer_queue:
+            return
+
+        priority, image_path, module_name = self.ai_infer_queue.pop(0)
+        # 优先使用 QThread（更稳定），如需切回线程池可改回 QRunnable
+        thread = AIInferThread(module_name, image_path, self.temp_dir, parent=self)
+        try:
+            self.status_bar.showMessage(f"AI任务开始: {os.path.basename(image_path)} | 模块: {module_name}")
+            print(f"[AI] Starting thread for {image_path} with module {module_name}")
+        except Exception:
+            pass
+        thread.finished.connect(self.on_ai_infer_finished)
+        self.ai_current_thread = thread  # 保持引用防止被回收
+        self.ai_infer_running = True
+        thread.start()
+
+    def run_ai_now(self):
+        """手动对当前图像执行推理（覆盖/重新生成临时标注）。"""
+        if not self.current_image:
+            QMessageBox.information(self, "AI推理", "请先选择一张图片")
+            return
+        module_name = self._get_first_active_module()
+        if not module_name:
+            QMessageBox.information(self, "AI推理", "请先在面板中勾选一个AI模块")
+            return
+        # 允许覆盖已有的临时/正式标注
+        self.schedule_ai_autoinfer(self.current_image, priority=True, force=True)
+
+    def on_ai_infer_finished(self, image_path: str, temp_path: str, ok: bool, module_name: str) -> None:
+        self.ai_infer_running = False
+        if image_path in self.ai_scheduled:
+            self.ai_scheduled.remove(image_path)
+
+        if ok and temp_path:
+            # 如果仍是当前图像且没有人工标注，则加载预标注
+            if self.current_image == image_path:
+                self.canvas.load_annotations_from_temp(self.temp_dir)
+                self.update_elements_panel()
+            # 更新列表状态
+            try:
+                fname = os.path.basename(image_path)
+                idx = self.image_files.index(fname) if fname in self.image_files else None
+                self.update_file_list_status(idx)
+            except Exception:
+                pass
+
+        # 继续下一个任务
+        QTimer.singleShot(0, self._start_next_ai_task)
+
+    def schedule_missing_annotations_for_all(self) -> None:
+        """为当前目录中缺少标注的图片批量排队。"""
+        if not self.image_files or not self.current_dir:
+            return
+        for fname in self.image_files:
+            img_path = os.path.join(self.current_dir, fname)
+            temp_path = os.path.join(self.temp_dir, f"temp_{fname}.json")
+            json_path = os.path.splitext(img_path)[0] + ".json"
+            if os.path.exists(temp_path) or os.path.exists(json_path):
+                continue
+            self.schedule_ai_autoinfer(img_path, priority=False)
 
     def undo(self) -> None:
         """执行撤销操作并显示状态。"""
@@ -809,6 +1058,11 @@ class MapleLabelWindow(QMainWindow):
         self.image_files = []
         self.file_list.clear()
 
+        # 重置 AI 预标注队列
+        self.ai_infer_queue.clear()
+        self.ai_scheduled.clear()
+        self.ai_infer_running = False
+
         for file in os.listdir(dir_path):
             if file.lower().endswith((".jpg", ".jpeg", ".png")):
                 self.image_files.append(file)
@@ -854,7 +1108,10 @@ class MapleLabelWindow(QMainWindow):
             self.load_image_by_path(first_file)
             self.select_current_file_in_list()
 
-    def load_image_by_path(self, file_path: str) -> bool:
+        # 自动为缺失标注的文件排队预标注
+        self.schedule_missing_annotations_for_all()
+
+    def load_image_by_path(self, file_path: str, user_requested: bool = False) -> bool:
         """根据路径加载图片并加载对应的标注（临时优先）。"""
         # 在切换图片前，先保存当前图片的标注到临时文件（如果有修改）
         if self.current_image and self.canvas.has_unsaved_changes():
@@ -868,8 +1125,10 @@ class MapleLabelWindow(QMainWindow):
             )
 
             # 修复加载顺序：先尝试加载临时文件，如果没有再加载JSON文件
+            annotation_loaded = False
             if self.canvas.load_annotations_from_temp(self.temp_dir):
                 self.status_bar.showMessage("已从临时文件加载标注")
+                annotation_loaded = True
             else:
                 # 尝试加载对应的JSON标注文件
                 json_path = os.path.splitext(file_path)[0] + ".json"
@@ -878,6 +1137,11 @@ class MapleLabelWindow(QMainWindow):
                         self.status_bar.showMessage(
                             f"已加载标注: {os.path.basename(json_path)}"
                         )
+                        annotation_loaded = True
+
+            if not annotation_loaded:
+                # 自动排队预标注；用户指定的图像优先
+                self.schedule_ai_autoinfer(file_path, priority=user_requested)
 
             # 更新右侧元素列表
             self.update_elements_panel()
@@ -939,7 +1203,7 @@ class MapleLabelWindow(QMainWindow):
         file_name = os.path.basename(file_path)
         if file_name in self.image_files:
             self.current_image_index = self.image_files.index(file_name)
-            self.load_image_by_path(file_path)
+            self.load_image_by_path(file_path, user_requested=True)
 
     def save_annotations(self) -> None:
         """保存当前图片的标注到 JSON 文件（LabelMe 格式）。"""
