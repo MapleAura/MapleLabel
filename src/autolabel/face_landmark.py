@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import base64
 import os
 from pathlib import Path
@@ -349,8 +351,7 @@ class FaceLandmark:
         img = cv2.imread(path)
         if img is None:
             return {}
-        
-        det, kpss = FaceLandmark.detector.detect(img, thresh=FaceLandmark.conf_thresh, input_size=img.shape)
+        det, kpss = FaceLandmark.detector.detect(img, thresh=FaceLandmark.conf_thresh, input_size=(640,640,3))
         if det is None or det.size == 0:
             return {}
         

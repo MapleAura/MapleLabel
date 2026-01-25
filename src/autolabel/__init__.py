@@ -7,3 +7,7 @@
 
 并使用注册器提供的装饰器进行注册。
 """
+from .demo import DemoAI
+from .face_landmark import FaceLandmark
+
+__all__ = ["DemoAI", "FaceLandmark"]

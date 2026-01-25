@@ -513,7 +513,7 @@ class MapleLabelWindow(QMainWindow):
     def create_ai_panel(self) -> None:
         """创建 AI 悬浮面板，内容暂为空占位。"""
         self.ai_panel = QWidget(self, Qt.Tool)
-        self.ai_panel.setWindowTitle("AI 面板")
+        self.ai_panel.setWindowTitle("AI 工具")
         self.ai_panel.setAttribute(Qt.WA_DeleteOnClose, False)
         self.ai_panel.setWindowFlag(Qt.WindowStaysOnTopHint, True)
         self.ai_panel.setFixedSize(420, 320)
@@ -523,7 +523,7 @@ class MapleLabelWindow(QMainWindow):
         layout.setSpacing(8)
 
         header_layout = QHBoxLayout()
-        header_label = QLabel("AI 工具")
+        header_label = QLabel("标注任务")
         header_label.setStyleSheet("color: #D4D4D4; font-weight: bold;")
         refresh_btn = QToolButton()
         refresh_btn.setText("刷新")
@@ -572,10 +572,9 @@ class MapleLabelWindow(QMainWindow):
 
     def refresh_ai_modules(self) -> None:
         """重新扫描并刷新 AI 模块列表。"""
-        try:
-            discover_modules()
-        except Exception:
-            pass
+        
+        discover_modules()
+        
 
         # 清空旧控件
         for i in reversed(range(self.ai_modules_layout.count())):
@@ -587,13 +586,20 @@ class MapleLabelWindow(QMainWindow):
         self.ai_module_checkboxes.clear()
 
         # 添加新模块条目
-        for entry in list_modules():
+        modules = list_modules()
+        for entry in modules:
             cb = QCheckBox(entry.name)
             cb.setChecked(entry.initialized)
             cb.setStyleSheet("color: #D4D4D4;")
             cb.toggled.connect(lambda checked, n=entry.name: self.on_ai_toggle(n, checked))
             self.ai_modules_layout.addWidget(cb)
             self.ai_module_checkboxes[entry.name] = cb
+
+        if not modules:
+            msg = QLabel("未发现可用模块，请检查 src/autolabel")
+            msg.setStyleSheet("color: #D4D4D4;")
+            self.ai_modules_layout.addWidget(msg)
+            self.status_bar.showMessage("AI模块未加载，检查依赖或路径")
 
         self.ai_modules_layout.addStretch()
 

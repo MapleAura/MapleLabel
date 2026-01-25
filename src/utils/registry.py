@@ -1,5 +1,7 @@
 import importlib
 import os
+import sys
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
@@ -75,6 +77,15 @@ def discover_modules() -> List[str]:
     # 定位到 src/autolabel 路径
     utils_dir = os.path.dirname(__file__)
     pkg_dir = os.path.normpath(os.path.join(utils_dir, "..", "autolabel"))
+
+    # 确保项目根路径在 sys.path（提高在打包/不同启动目录下的可发现性）
+    try:
+        root = Path(utils_dir).resolve().parent.parent  # project root
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+    except Exception:
+        pass
+
     if not os.path.isdir(pkg_dir):
         return imported
     for fname in os.listdir(pkg_dir):
@@ -83,10 +94,8 @@ def discover_modules() -> List[str]:
         mod = os.path.splitext(fname)[0]
         if mod in {"__init__"}:
             continue
-        try:
-            importlib.import_module(f"src.autolabel.{mod}")
-            imported.append(mod)
-        except Exception:
-            # 忽略导入失败的模块以不影响其他模块
-            pass
+        
+        importlib.import_module(f"src.autolabel.{mod}")
+        imported.append(mod)
+        
     return imported
