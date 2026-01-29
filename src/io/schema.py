@@ -28,9 +28,8 @@ def normalize_shape(shape: Dict[str, Any]) -> Dict[str, Any]:
 
     attrs = shape.get("attributes")
     if attrs is None:
-        attrs = shape.get("attrs") or shape.get("flags") or {}
+        attrs = shape.get("flags") or {}
     shape["attributes"] = attrs or {}
-    shape["attrs"] = shape["attributes"]
     shape.setdefault("flags", {})
     shape.setdefault("description", "")
     shape.setdefault("mask", None)

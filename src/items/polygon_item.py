@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 class PolygonVertex(QGraphicsEllipseItem):
     """多边形顶点项"""
 
-    def __init__(self, x, y, radius=3, parent=None):
+    def __init__(self, x, y, radius=1, parent=None):
         super().__init__(-radius, -radius, radius * 2, radius * 2, parent)
         self.setPos(x, y)
         self.setBrush(QBrush(Qt.red))
@@ -21,7 +21,7 @@ class PolygonVertex(QGraphicsEllipseItem):
         self.setFlag(QGraphicsEllipseItem.ItemSendsGeometryChanges)
         self.setFlag(QGraphicsEllipseItem.ItemIsSelectable)
         self.radius = radius
-        self.selected_radius_extra = 2
+        self.selected_radius_extra = 1
         self.parent_polygon = parent
         self.setZValue(2)  # 顶点在最上层
         # 光标悬停在顶点上显示平移光标
@@ -59,7 +59,7 @@ class PolygonItem(QGraphicsPolygonItem):
         # 形状类型
         self.shape_type = "polygon"
         self.is_closed = False  # 多边形是否已封闭
-        self.vertex_radius = 3
+        self.vertex_radius = 1
 
         # 默认样式
         self.default_pen_color = QColor(0, 255, 0)
@@ -250,7 +250,6 @@ class PolygonItem(QGraphicsPolygonItem):
             "group_id": self.group_id,
             "shape_type": "polygon",
             "attributes": self.attributes.copy() if self.attributes else {},
-            "attrs": self.attributes.copy() if self.attributes else {},
             "flags": {},
         }
 
@@ -284,7 +283,6 @@ class PolygonItem(QGraphicsPolygonItem):
             label=data["label"],
             group_id=data.get("group_id"),
             flags=data.get("attributes", {})
-            or data.get("attrs", {})
             or data.get("flags", {}),
         )
 

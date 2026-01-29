@@ -21,7 +21,7 @@ class PointItem(QGraphicsItem):
     def __init__(
         self,
         pos: Optional[QPointF] = None,
-        radius: int = 3,
+        radius: int = 1,
         label: str = "point",
         group_id: Optional[int] = None,
         parent: Optional[QGraphicsItem] = None,
@@ -35,7 +35,7 @@ class PointItem(QGraphicsItem):
 
         # 点样式
         self.radius = radius
-        self.selected_radius_extra = 2  # 选中时放大
+        self.selected_radius_extra = 1  # 选中时放大
         self.default_normal_color = QColor(255, 0, 0, 200)
         self.default_selected_color = QColor(255, 255, 0, 200)
         self.normal_color = QColor(self.default_normal_color)
@@ -138,7 +138,6 @@ class PointItem(QGraphicsItem):
             "group_id": self.group_id,
             "shape_type": "point",
             "attributes": attrs,
-            "attrs": attrs,
             "flags": {},
         }
 
@@ -153,13 +152,11 @@ class PointItem(QGraphicsItem):
             return None
 
         pos = QPointF(points[0][0], points[0][1])
-        radius = 3
+        radius = 1
         label = data.get("label", "point")
         item = cls(pos, radius, label, data.get("group_id"))
         # 恢复自定义属性
         item.attributes = data.get("attributes", None)
-        if item.attributes is None:
-            item.attributes = data.get("attrs", None)
         if item.attributes is None:
             item.attributes = data.get("flags", {}) or {}
 

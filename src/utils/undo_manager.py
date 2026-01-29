@@ -14,7 +14,14 @@ class UndoRedoManager:
         self.max_stack = max_stack
 
     def push_action(self, undo: Callable, redo: Callable, name: str = ""):
-        self.undo_stack.append({"undo": undo, "redo": redo, "name": name})
+        # 记录当前画布对应的图片路径，以便在撤销/重做时恢复到正确的图片上下文
+        image_path = None
+        try:
+            image_path = getattr(self.canvas, "current_image_path", None)
+        except Exception:
+            image_path = None
+
+        self.undo_stack.append({"undo": undo, "redo": redo, "name": name, "image": image_path})
         if len(self.undo_stack) > self.max_stack:
             self.undo_stack.pop(0)
         self.redo_stack.clear()
@@ -24,6 +31,12 @@ class UndoRedoManager:
             return False
         action = self.undo_stack.pop()
         try:
+            # 如果动作属于其它图片，先切换到对应图片
+            try:
+                self._ensure_action_image(action)
+            except Exception:
+                pass
+
             action["undo"]()
             self.redo_stack.append(action)
             # 标记为已修改
@@ -40,6 +53,12 @@ class UndoRedoManager:
             return False
         action = self.redo_stack.pop()
         try:
+            # 如果动作属于其它图片，先切换到对应图片
+            try:
+                self._ensure_action_image(action)
+            except Exception:
+                pass
+
             action["redo"]()
             self.undo_stack.append(action)
             try:
@@ -111,6 +130,39 @@ class UndoRedoManager:
                 self.canvas.scene.removeItem(item)
         except Exception:
             pass
+
+    def _ensure_action_image(self, action: dict):
+        """若动作属于不同图片，尝试切换到动作记录的图片路径。"""
+        target = action.get("image")
+        try:
+            current = getattr(self.canvas, "current_image_path", None)
+        except Exception:
+            current = None
+
+        if target and target != current:
+            try:
+                win = None
+                try:
+                    win = self.canvas.window()
+                except Exception:
+                    win = None
+
+                if win is not None and hasattr(win, "load_image_by_path"):
+                    try:
+                        win.load_image_by_path(target)
+                        return True
+                    except Exception:
+                        pass
+
+                # 兜底直接让 canvas 加载图片
+                try:
+                    self.canvas.set_image(target)
+                    return True
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        return False
 
     def push_create(self, item, name: str = "create"):
         def undo():

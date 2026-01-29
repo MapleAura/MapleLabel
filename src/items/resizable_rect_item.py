@@ -413,7 +413,6 @@ class ResizableRectItem(QGraphicsRectItem):
             "group_id": self.group_id,
             "shape_type": "rectangle",
             "attributes": attrs,
-            "attrs": attrs,
             "flags": {},
         }
 
@@ -443,8 +442,6 @@ class ResizableRectItem(QGraphicsRectItem):
         item = cls(rect, label, data.get("group_id"))
         # 恢复自定义属性：优先使用 'attributes'/'attrs'，兼容 'flags'
         item.attributes = data.get("attributes", None)
-        if item.attributes is None:
-            item.attributes = data.get("attrs", None)
         if item.attributes is None:
             item.attributes = data.get("flags", {}) or {}
 
