@@ -180,6 +180,118 @@ class GroupSeparatedDelegate(QStyledItemDelegate):
             painter.drawLine(opt.rect.left(), y, opt.rect.right(), y)
             painter.restore()
 
+
+class CheckboxTableWidget(QTableWidget):
+    """自定义表格，支持第一列勾选框的点击。"""
+    
+    def mousePressEvent(self, event):
+        """处理鼠标点击事件。"""
+        index = self.indexAt(event.pos())
+        if index.isValid() and index.column() == 0:
+            # 点击第一列时，切换勾选状态
+            item = self.itemFromIndex(index)
+            if item:
+                current_state = item.checkState()
+                new_state = Qt.Unchecked if current_state == Qt.Checked else Qt.Checked
+                item.setCheckState(new_state)
+                # 手动触发 itemChanged 信号
+                self.itemChanged.emit(item)
+                return
+        super().mousePressEvent(event)
+
+
+class CenteredCheckboxDelegate(QStyledItemDelegate):
+    """自定义委托：居中显示勾选框，并绘制分隔线。"""
+    
+    def paint(self, painter, option, index):
+        """绘制勾选框和分隔线。"""
+        if index.column() == 0:
+            # 获取勾选状态
+            item = index.model().itemFromIndex(index)
+            is_checked = item.checkState() == Qt.Checked if item else False
+            
+            # 绘制背景
+            opt = QStyleOptionViewItem(option)
+            self.initStyleOption(opt, index)
+            style = opt.widget.style() if opt.widget else QApplication.instance().style()
+            style.drawControl(QStyle.CE_ItemViewItem, opt, painter, opt.widget)
+            
+            # 计算勾选框的居中位置
+            checkbox_size = 16
+            checkbox_x = option.rect.left() + (option.rect.width() - checkbox_size) // 2
+            checkbox_y = option.rect.top() + (option.rect.height() - checkbox_size) // 2
+            checkbox_rect = opt.rect.__class__(checkbox_x, checkbox_y, checkbox_size, checkbox_size)
+            
+            # 绘制勾选框
+            checkbox_opt = QStyleOptionViewItem(opt)
+            checkbox_opt.rect = checkbox_rect
+            checkbox_opt.state = checkbox_opt.state | QStyle.State_Enabled
+            if is_checked:
+                checkbox_opt.state |= QStyle.State_On
+            else:
+                checkbox_opt.state |= QStyle.State_Off
+            style.drawControl(QStyle.CE_CheckBox, checkbox_opt, painter)
+            
+            # 绘制分隔线（按组）
+            model = index.model()
+            row = index.row()
+            gid_index = model.index(row, 2)  # 组别在第2列
+            gid_curr = model.data(gid_index)
+            gid_next = None
+            if row < model.rowCount() - 1:
+                gid_next = model.data(model.index(row + 1, 2))
+            
+            same_group = (
+                isinstance(gid_curr, str)
+                and isinstance(gid_next, str)
+                and gid_curr == gid_next
+                and gid_curr != "-1"
+            )
+            
+            if not same_group:
+                painter.save()
+                pen = painter.pen()
+                pen.setColor(QColor(60, 60, 60))
+                pen.setWidth(1)
+                painter.setPen(pen)
+                y = option.rect.bottom() - 1
+                painter.drawLine(option.rect.left(), y, option.rect.right(), y)
+                painter.restore()
+        else:
+            # 其他列：居中显示文本并绘制分隔线
+            opt = QStyleOptionViewItem(option)
+            self.initStyleOption(opt, index)
+            opt.displayAlignment = Qt.AlignCenter
+            
+            style = opt.widget.style() if opt.widget else QApplication.instance().style()
+            style.drawControl(QStyle.CE_ItemViewItem, opt, painter, opt.widget)
+            
+            # 绘制分隔线（按组）
+            model = index.model()
+            row = index.row()
+            gid_index = model.index(row, 2)  # 组别在第2列
+            gid_curr = model.data(gid_index)
+            gid_next = None
+            if row < model.rowCount() - 1:
+                gid_next = model.data(model.index(row + 1, 2))
+            
+            same_group = (
+                isinstance(gid_curr, str)
+                and isinstance(gid_next, str)
+                and gid_curr == gid_next
+                and gid_curr != "-1"
+            )
+            
+            if not same_group:
+                painter.save()
+                pen = painter.pen()
+                pen.setColor(QColor(60, 60, 60))
+                pen.setWidth(1)
+                painter.setPen(pen)
+                y = option.rect.bottom() - 1
+                painter.drawLine(option.rect.left(), y, option.rect.right(), y)
+                painter.restore()
+
 class MapleLabelWindow(QMainWindow):
     """主窗口类，封装 UI 布局与用户交互逻辑。"""
 
@@ -268,9 +380,9 @@ class MapleLabelWindow(QMainWindow):
         )
         self.elements_layout = QVBoxLayout(self.elements_panel)
         self.elements_layout.addWidget(QLabel("概览"))
-        self.elements_table = QTableWidget()
-        self.elements_table.setColumnCount(4)
-        self.elements_table.setHorizontalHeaderLabels(["类型", "组别", "坐标", "属性"])
+        self.elements_table = CheckboxTableWidget()
+        self.elements_table.setColumnCount(5)
+        self.elements_table.setHorizontalHeaderLabels(["显示", "类型", "组别", "坐标", "属性"])
         self.elements_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.elements_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.elements_table.setSelectionMode(QTableWidget.SingleSelection)
@@ -296,6 +408,11 @@ class MapleLabelWindow(QMainWindow):
             vh = self.elements_table.verticalHeader()
             vh.setDefaultSectionSize(24)
             vh.setMinimumSectionSize(20)
+        except Exception:
+            pass
+        # 设置第一列（显示列）的固定宽度
+        try:
+            self.elements_table.setColumnWidth(0, 50)
         except Exception:
             pass
         self.elements_layout.addWidget(self.elements_table)
@@ -329,6 +446,8 @@ class MapleLabelWindow(QMainWindow):
 
         # 绑定概览表格与画布的选中同步
         self.elements_table.itemSelectionChanged.connect(self.on_elements_selection_changed)
+        # 绑定表格勾选框变化事件
+        self.elements_table.itemChanged.connect(self.on_elements_visibility_changed)
 
         # 状态栏
         self.status_bar = QStatusBar()
@@ -1554,17 +1673,22 @@ class MapleLabelWindow(QMainWindow):
 
         self.elements_table.setRowCount(len(rows))
         for i, (t, gid, coord, attrs, ref_item) in enumerate(rows):
+            # 创建显示勾选框
+            checkbox_item = QTableWidgetItem()
+            checkbox_item.setCheckState(Qt.Checked if ref_item.isVisible() else Qt.Unchecked)
+            checkbox_item.setTextAlignment(Qt.AlignCenter)
+            
             type_item = QTableWidgetItem(t)
             gid_item = QTableWidgetItem(str(gid if gid is not None else -1))
             coord_item = QTableWidgetItem(coord)
             attrs_text = json.dumps(attrs, ensure_ascii=False)
             attrs_item = QTableWidgetItem(attrs_text)
 
-            # 居中显示
-            type_item.setTextAlignment(Qt.AlignCenter)
-            gid_item.setTextAlignment(Qt.AlignCenter)
-            coord_item.setTextAlignment(Qt.AlignCenter)
-            attrs_item.setTextAlignment(Qt.AlignCenter)
+            # # 居中显示
+            # type_item.setTextAlignment(Qt.AlignCenter)
+            # gid_item.setTextAlignment(Qt.AlignCenter)
+            # coord_item.setTextAlignment(Qt.AlignCenter)
+            # attrs_item.setTextAlignment(Qt.AlignCenter)
 
             # 颜色调整
             type_item.setForeground(self.status_bar.palette().windowText())
@@ -1572,10 +1696,11 @@ class MapleLabelWindow(QMainWindow):
             coord_item.setForeground(self.status_bar.palette().windowText())
             attrs_item.setForeground(self.status_bar.palette().windowText())
 
-            self.elements_table.setItem(i, 0, type_item)
-            self.elements_table.setItem(i, 1, gid_item)
-            self.elements_table.setItem(i, 2, coord_item)
-            self.elements_table.setItem(i, 3, attrs_item)
+            self.elements_table.setItem(i, 0, checkbox_item)
+            self.elements_table.setItem(i, 1, type_item)
+            self.elements_table.setItem(i, 2, gid_item)
+            self.elements_table.setItem(i, 3, coord_item)
+            self.elements_table.setItem(i, 4, attrs_item)
             # 记录对应的 scene item
             self.elements_row_items.append(ref_item)
 
@@ -1635,3 +1760,19 @@ class MapleLabelWindow(QMainWindow):
             self.elements_table.selectRow(idx)
         except ValueError:
             self.elements_table.clearSelection()
+
+    def on_elements_visibility_changed(self, item: QTableWidgetItem) -> None:
+        """当概览表格中的勾选框状态变化时，控制对应元素的显示/隐藏。"""
+        # 只处理第一列（显示列）的变化
+        if item.column() != 0:
+            return
+        
+        row = item.row()
+        if not (0 <= row < len(self.elements_row_items)):
+            return
+        
+        # 获取对应的场景元素
+        scene_item = self.elements_row_items[row]
+        # 根据勾选框状态控制显示
+        is_visible = item.checkState() == Qt.Checked
+        scene_item.setVisible(is_visible)
