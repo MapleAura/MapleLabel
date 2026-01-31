@@ -14,11 +14,11 @@ from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsRectItem, QGraphics
 
 
 class RotateHandle(QGraphicsEllipseItem):
-    """旋转句柄 - 圆形按钮，中间有旋转箭头图标"""
+    """旋转句柄 - 圆形按钮，圈上有旋转箭头图标"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.handle_size = 12
+        self.handle_size = 10
         self.setRect(-self.handle_size / 2, -self.handle_size / 2, self.handle_size, self.handle_size)
         
         # 样式设置
@@ -35,40 +35,44 @@ class RotateHandle(QGraphicsEllipseItem):
         painter.setBrush(self.brush())
         painter.drawEllipse(self.rect())
 
-        # 绘制旋转箭头图标
-        arrow_size = 6
-        painter.setPen(QPen(QColor(255, 100, 0), 1.5))
-
-        # 绘制一个弧形箭头（代表旋转）
+        # 绘制圆上的旋转箭头
+        arrow_color = QColor(255, 100, 0)
+        painter.setPen(QPen(arrow_color, 1.5))
+        
+        # 圆心
+        center = self.rect().center()
+        radius = self.handle_size / 2 - 2  # 圆的半径，留一点边距
+        
+        # 绘制弧形箭头（顺时针旋转，从上方开始）
+        # 弧从 45 度开始，顺时针转 270 度
         path = QPainterPath()
-        # 从上面开始，顺时针绘制弧
-        path.moveTo(0, -self.handle_size / 3)
-        path.arcTo(
-            -self.handle_size / 2.5, -self.handle_size / 2.5,
-            self.handle_size / 1.25, self.handle_size / 1.25,
-            90, -180
-        )
+        path.arcMoveTo(center.x() - radius, center.y() - radius, 
+                       radius * 2, radius * 2, 45)
+        path.arcTo(center.x() - radius, center.y() - radius, 
+                   radius * 2, radius * 2, 45, 270)
         painter.drawPath(path)
-
-        # 绘制箭头头部
-        # 末端箭头
-        end_angle = math.radians(270)  # -180 度后的位置
-        end_x = math.cos(end_angle) * self.handle_size / 2.5
-        end_y = math.sin(end_angle) * self.handle_size / 2.5
-
-        # 绘制箭头尖端
-        arrow_angle = 135
-        arrow_rad = math.radians(arrow_angle)
+        
+        # 绘制箭头头部（在结束位置）
+        # 270 度旋转后的位置是下方左边
+        end_angle = math.radians(45 - 270)  # 最后的角度
+        end_x = center.x() + radius * math.cos(end_angle)
+        end_y = center.y() + radius * math.sin(end_angle)
+        
+        # 箭头尖端方向（指向弧的切线方向）
+        arrow_size = 3
+        # 切线方向是垂直于半径的
+        arrow_angle1 = end_angle + math.pi / 2
+        arrow_angle2 = end_angle - math.pi / 2
+        
         p1 = QPointF(
-            end_x + arrow_size * math.cos(arrow_rad),
-            end_y + arrow_size * math.sin(arrow_rad)
+            end_x + arrow_size * math.cos(arrow_angle1),
+            end_y + arrow_size * math.sin(arrow_angle1)
         )
-        arrow_rad2 = math.radians(arrow_angle - 90)
         p2 = QPointF(
-            end_x + arrow_size * math.cos(arrow_rad2),
-            end_y + arrow_size * math.sin(arrow_rad2)
+            end_x + arrow_size * math.cos(arrow_angle2),
+            end_y + arrow_size * math.sin(arrow_angle2)
         )
-
+        
         painter.drawLine(QPointF(end_x, end_y), p1)
         painter.drawLine(QPointF(end_x, end_y), p2)
 
@@ -185,9 +189,9 @@ class ResizableRectItem(QGraphicsRectItem):
 
             handle.setRect(handle_x, handle_y, self.handle_size, self.handle_size)
 
-        # 更新旋转按钮位置（位于矩形顶部中心，更靠上）
+        # 更新旋转按钮位置（位于矩形顶部中心，靠近矩形框）
         rotate_x = rect.x() + rect.width() / 2
-        rotate_y = rect.y() - 25  # 距离顶部 25 像素
+        rotate_y = rect.y() - 12  # 距离顶部 12 像素，更靠近矩形框
         self.rotate_handle.setPos(rotate_x, rotate_y)
 
     def itemChange(self, change: Any, value: Any) -> Any:
@@ -335,7 +339,7 @@ class ResizableRectItem(QGraphicsRectItem):
                 self.rotate_start_scene_pos = event.scenePos()
                 self.rotate_start_angle = self.angle
                 # 不记录旋转中心，每次旋转时实时计算
-                self.setCursor(Qt.ClosedHandCursor)
+                self.setCursor(Qt.OpenHandCursor)
                 event.accept()
                 return
 
