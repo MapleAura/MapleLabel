@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -1545,6 +1546,32 @@ class MapleLabelWindow(QMainWindow):
         # 保存当前坐标标签引用，用于快速更新而不重建整个表单
         self._current_coords_label = coords_label
 
+        # 如果是矩形，添加角度调节
+        from .items import ResizableRectItem
+        if isinstance(item, ResizableRectItem):
+            # 创建角度微调框
+            angle_spinbox = QDoubleSpinBox()
+            angle_spinbox.setMinimum(0.0)
+            angle_spinbox.setMaximum(359.99)
+            angle_spinbox.setSingleStep(1.0)
+            angle_spinbox.setDecimals(2)
+            angle_spinbox.setValue(item.angle)
+            angle_spinbox.setSuffix("°")
+
+            def on_angle_changed(value):
+                item.angle = value % 360.0
+                item._apply_rotation_transform()
+                item.update_handles()
+                # 如果属于分组，更新分组框
+                if hasattr(item, "group_item") and item.group_item:
+                    item.group_item.update_bounds()
+                self.canvas.set_modified(True)
+                self.canvas.update()
+
+            angle_spinbox.valueChanged.connect(on_angle_changed)
+            self.property_form.addRow("旋转角度", angle_spinbox)
+            self._current_angle_spinbox = angle_spinbox
+
         # 从 label_config 中查找该类型的属性定义
         attrs_def = self.label_config.get(shape_type, {})
         # 属性定义示例: {"age": ["15","20"], "color": [..]}
@@ -1599,6 +1626,14 @@ class MapleLabelWindow(QMainWindow):
                 return
             item = selected[0]
             self._current_coords_label.setText(self._format_item_coords(item))
+            
+            # 同时更新角度显示（如果有）
+            if hasattr(self, "_current_angle_spinbox"):
+                from .items import ResizableRectItem
+                if isinstance(item, ResizableRectItem):
+                    self._current_angle_spinbox.blockSignals(True)
+                    self._current_angle_spinbox.setValue(item.angle)
+                    self._current_angle_spinbox.blockSignals(False)
         except Exception:
             pass
 
@@ -1608,8 +1643,9 @@ class MapleLabelWindow(QMainWindow):
 
         if isinstance(item, ResizableRectItem):
             r = item.rect()
+            angle_str = f", angle={item.angle:.1f}°" if item.angle != 0.0 else ""
             return (
-                f"({r.x():.1f}, {r.y():.1f}, {r.width():.1f}, {r.height():.1f})"
+                f"({r.x():.1f}, {r.y():.1f}, {r.width():.1f}, {r.height():.1f}){angle_str}"
             )
         elif isinstance(item, PointItem):
             p = item.pos()

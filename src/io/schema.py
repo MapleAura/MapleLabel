@@ -37,6 +37,12 @@ def normalize_shape(shape: Dict[str, Any]) -> Dict[str, Any]:
     pts = shape.get("points", [])
     if shape_type == "rectangle":
         shape["points"] = _coerce_rectangle_points(pts)
+        # 保留 angle 字段如果存在
+        if "angle" not in shape and "angle" in shape:
+            try:
+                shape["angle"] = float(shape.get("angle", 0)) % 360.0
+            except Exception:
+                pass
     else:
         # leave other shapes as-is but coerce to float pairs when possible
         new_pts: List[List[float]] = []

@@ -2,13 +2,75 @@
 
 提供 `ResizableRectItem`，这是应用中用于矩形标注的 QGraphicsRectItem 子类。
 该项包含调整大小的手柄并实现自定义移动逻辑，使得矩形可以原地更新并正确序列化。
+同时支持旋转功能。
 """
 
+import math
 from typing import Any, Optional
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QPainterPath, QPen
-from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsItem
+from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QTransform
+from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsRectItem, QGraphicsItem
+
+
+class RotateHandle(QGraphicsEllipseItem):
+    """旋转句柄 - 圆形按钮，中间有旋转箭头图标"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.handle_size = 12
+        self.setRect(-self.handle_size / 2, -self.handle_size / 2, self.handle_size, self.handle_size)
+        
+        # 样式设置
+        self.setPen(QPen(QColor(255, 165, 0), 2))  # 橙色边框
+        self.setBrush(QBrush(QColor(255, 255, 255)))  # 白色填充
+        self.setVisible(False)
+        self.setZValue(1)
+        self.setAcceptHoverEvents(False)
+
+    def paint(self, painter: QPainter, option, widget=None) -> None:
+        """绘制旋转句柄 - 圆形加旋转箭头"""
+        # 绘制圆形背景
+        painter.setPen(self.pen())
+        painter.setBrush(self.brush())
+        painter.drawEllipse(self.rect())
+
+        # 绘制旋转箭头图标
+        arrow_size = 6
+        painter.setPen(QPen(QColor(255, 100, 0), 1.5))
+
+        # 绘制一个弧形箭头（代表旋转）
+        path = QPainterPath()
+        # 从上面开始，顺时针绘制弧
+        path.moveTo(0, -self.handle_size / 3)
+        path.arcTo(
+            -self.handle_size / 2.5, -self.handle_size / 2.5,
+            self.handle_size / 1.25, self.handle_size / 1.25,
+            90, -180
+        )
+        painter.drawPath(path)
+
+        # 绘制箭头头部
+        # 末端箭头
+        end_angle = math.radians(270)  # -180 度后的位置
+        end_x = math.cos(end_angle) * self.handle_size / 2.5
+        end_y = math.sin(end_angle) * self.handle_size / 2.5
+
+        # 绘制箭头尖端
+        arrow_angle = 135
+        arrow_rad = math.radians(arrow_angle)
+        p1 = QPointF(
+            end_x + arrow_size * math.cos(arrow_rad),
+            end_y + arrow_size * math.sin(arrow_rad)
+        )
+        arrow_rad2 = math.radians(arrow_angle - 90)
+        p2 = QPointF(
+            end_x + arrow_size * math.cos(arrow_rad2),
+            end_y + arrow_size * math.sin(arrow_rad2)
+        )
+
+        painter.drawLine(QPointF(end_x, end_y), p1)
+        painter.drawLine(QPointF(end_x, end_y), p2)
 
 
 class ResizableRectItem(QGraphicsRectItem):
@@ -48,6 +110,9 @@ class ResizableRectItem(QGraphicsRectItem):
         # 可编辑属性字典（对应 label.json 中定义的属性），序列化时放到 'flags'
         self.attributes = {}
 
+        # 旋转角度（角度制，OpenCV 兼容），默认为 0
+        self.angle = 0.0
+
         # 调整大小的手柄设置
         self.handle_size = 6
         self.handles = {}
@@ -68,9 +133,14 @@ class ResizableRectItem(QGraphicsRectItem):
             handle.setAcceptHoverEvents(False)
             self.handles[pos] = handle
 
+        # 创建旋转按钮（位于矩形顶部中心）
+        self.rotate_handle = RotateHandle(self)
+        self.rotate_handle.setVisible(False)
+
         # 立即初始化句柄位置
         self.update_handles()
         self.resizing = False
+        self.rotating = False
         # 自定义移动状态（用于在平移时更新 rect 而不是仅改变 pos）
         self._moving = False
         self._move_start_scene_pos = None
@@ -115,6 +185,11 @@ class ResizableRectItem(QGraphicsRectItem):
 
             handle.setRect(handle_x, handle_y, self.handle_size, self.handle_size)
 
+        # 更新旋转按钮位置（位于矩形顶部中心，更靠上）
+        rotate_x = rect.x() + rect.width() / 2
+        rotate_y = rect.y() - 25  # 距离顶部 25 像素
+        self.rotate_handle.setPos(rotate_x, rotate_y)
+
     def itemChange(self, change: Any, value: Any) -> Any:
         """处理项变化。
 
@@ -156,15 +231,17 @@ class ResizableRectItem(QGraphicsRectItem):
         painter.setBrush(self.brush())
         painter.drawRect(self.rect())
 
-        # 如果被选中，显示手柄
+        # 如果被选中，显示手柄和旋转按钮
         if self.isSelected():
             self.update_handles()
             for pos, handle in self.handles.items():
                 handle.setVisible(True)
+            self.rotate_handle.setVisible(True)
         else:
-            # 未被选中时隐藏手柄
+            # 未被选中时隐藏手柄和旋转按钮
             for pos, handle in self.handles.items():
                 handle.setVisible(False)
+            self.rotate_handle.setVisible(False)
 
     def contains_handle(self, pos: QPointF) -> Optional[str]:
         """检查是否点击到手柄 - 修复坐标转换问题。
@@ -191,16 +268,38 @@ class ResizableRectItem(QGraphicsRectItem):
                 return handle_pos
         return None
 
+    def contains_rotate_handle(self, pos: QPointF) -> bool:
+        """检查是否点击到旋转按钮。"""
+        if not self.rotate_handle.isVisible():
+            return False
+
+        # 获取旋转句柄在场景坐标系中的矩形
+        handle_scene_rect = self.rotate_handle.mapRectToScene(self.rotate_handle.rect())
+
+        # 扩大热区范围，确保边缘部分也能被检测到
+        hotspot_rect = QRectF(
+            handle_scene_rect.x() - 10,
+            handle_scene_rect.y() - 10,
+            handle_scene_rect.width() + 20,
+            handle_scene_rect.height() + 20,
+        )
+        return hotspot_rect.contains(pos)
+
     def boundingRect(self) -> QRectF:
         """重写边界矩形，包含所有手柄的可见区域。"""
         rect = super().boundingRect()
 
-        # 如果被选中，扩展边界以包含所有手柄
+        # 如果被选中，扩展边界以包含所有手柄和旋转句柄
         if self.isSelected():
             for handle in self.handles.values():
                 if handle.isVisible():
                     handle_rect = handle.mapRectToParent(handle.rect())
                     rect = rect.united(handle_rect)
+            
+            # 包含旋转句柄
+            if self.rotate_handle.isVisible():
+                rotate_rect = self.rotate_handle.mapRectToParent(self.rotate_handle.rect())
+                rect = rect.united(rotate_rect)
 
         return rect
 
@@ -208,29 +307,65 @@ class ResizableRectItem(QGraphicsRectItem):
         """重写形状，确保点击检测包含所有手柄区域。"""
         path = super().shape()
 
-        # 如果被选中，添加所有手柄的形状
+        # 如果被选中，添加所有手柄和旋转句柄的形状
         if self.isSelected():
             for handle in self.handles.values():
                 if handle.isVisible():
                     handle_path = QPainterPath()
                     handle_path.addRect(handle.mapRectToParent(handle.rect()))
                     path = path.united(handle_path)
+            
+            # 添加旋转句柄的形状
+            if self.rotate_handle.isVisible():
+                rotate_path = QPainterPath()
+                rotate_path.addRect(self.rotate_handle.mapRectToParent(self.rotate_handle.rect()))
+                path = path.united(rotate_path)
 
         return path
 
     def mousePressEvent(self, event) -> None:
         """处理鼠标按下事件。
 
-        在句柄上按下进入缩放状态，否则进入自定义平移模式。
+        在句柄上按下进入缩放状态，在旋转按钮上按下进入旋转状态，否则进入自定义平移模式。
         """
         if self.isSelected():
-            # 使用场景坐标检查是否点击到手柄
+            # 先检查是否点击到旋转按钮
+            if self.contains_rotate_handle(event.scenePos()):
+                self.rotating = True
+                self.rotate_start_scene_pos = event.scenePos()
+                self.rotate_start_angle = self.angle
+                # 不记录旋转中心，每次旋转时实时计算
+                self.setCursor(Qt.ClosedHandCursor)
+                event.accept()
+                return
+
+            # 使用场景坐标检查是否点击到调整大小的手柄
             handle_pos = self.contains_handle(event.scenePos())
             if handle_pos:
                 self.resizing = True
                 self.resize_pos = handle_pos
                 self.resize_start_rect = self.rect()
                 self.resize_start_scene_pos = event.scenePos()
+
+                # 保存固定角的项坐标（未旋转状态下的坐标）
+                if handle_pos == "bottom_right":
+                    # 右下角拉伸时，左上角固定
+                    self.resize_fixed_corner_item = QPointF(
+                        self.resize_start_rect.left(),
+                        self.resize_start_rect.top()
+                    )
+                elif handle_pos == "top_left":
+                    # 左上角拉伸时，右下角固定
+                    self.resize_fixed_corner_item = QPointF(
+                        self.resize_start_rect.right(),
+                        self.resize_start_rect.bottom()
+                    )
+
+                # 同时保存固定角在场景坐标中的位置（用于最终对齐）
+                try:
+                    self.resize_fixed_corner_scene = self.mapToScene(self.resize_fixed_corner_item)
+                except Exception:
+                    self.resize_fixed_corner_scene = None
 
                 # 记录当前变换矩阵
                 self.resize_start_transform = self.transform()
@@ -242,44 +377,84 @@ class ResizableRectItem(QGraphicsRectItem):
 
         # 非手柄区域：进入自定义移动模式（不调用 super，这样我们可以在移动时更新 rect）
         self.resizing = False
+        self.rotating = False
         self._moving = True
         self._move_start_scene_pos = event.scenePos()
         self._move_start_rect = self.rect()
+        # 记录平移开始时的场景坐标位置（用于准确计算偏移）
+        self._move_start_scene_rect_topLeft = self.mapToScene(self._move_start_rect.topLeft())
         self.setCursor(Qt.SizeAllCursor)
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
-        """处理鼠标移动事件 - 支持缩放与自定义平移。"""
-        if self.resizing:
-            # 使用场景坐标计算偏移
+        """处理鼠标移动事件 - 支持缩放、旋转与自定义平移。"""
+        if self.rotating:
+            # 计算旋转角度
+            # 每次都重新计算旋转中心（确保基于最新的 rect 状态）
+            rect = self.rect()
+            center_local = QPointF(rect.x() + rect.width() / 2, rect.y() + rect.height() / 2)
+            center_scene = self.mapToScene(center_local)
+            
+            start_vec = self.rotate_start_scene_pos - center_scene
+            current_vec = event.scenePos() - center_scene
+
+            # 计算角度差（使用反正切）
+            start_angle = math.atan2(start_vec.y(), start_vec.x()) * 180.0 / math.pi
+            current_angle = math.atan2(current_vec.y(), current_vec.x()) * 180.0 / math.pi
+
+            angle_delta = current_angle - start_angle
+
+            # 更新旋转角度
+            self.angle = (self.rotate_start_angle + angle_delta) % 360.0
+
+            # 更新变换矩阵（应用旋转）
+            self._apply_rotation_transform()
+
+            # 更新句柄位置
+            self.update_handles()
+
+            # 如果属于分组，更新分组框
+            if hasattr(self, "group_item") and self.group_item:
+                self.group_item.update_bounds()
+
+            # 通知视图更新
+            self.prepareGeometryChange()
+            self.update()
+
+        elif self.resizing:
+            # 在项坐标系中工作（避免旋转变换的影响）
+            # 通过逆变换将场景坐标转换为项坐标
             current_scene_pos = event.scenePos()
-            dx = current_scene_pos.x() - self.resize_start_scene_pos.x()
-            dy = current_scene_pos.y() - self.resize_start_scene_pos.y()
-
-            # 考虑项变换的影响
-            if not self.transform().isIdentity():
-                # 获取相对于项的局部偏移
-                local_offset = self.mapFromScene(current_scene_pos) - self.mapFromScene(
-                    self.resize_start_scene_pos
-                )
-                dx = local_offset.x()
-                dy = local_offset.y()
-
-            rect = self.resize_start_rect
-
-            if self.resize_pos == "top_left":
-                # 左上角调整：同时改变位置和大小
+            inv_transform, _ = self.resize_start_transform.inverted()
+            current_item_pos = inv_transform.map(current_scene_pos)
+            
+            if self.resize_pos == "bottom_right":
+                # 右下角拉伸，左上角固定
+                fixed_tl_item = self.resize_fixed_corner_item
+                active_br_item = current_item_pos
+                
+                # 构造新矩形
                 new_rect = QRectF(
-                    rect.left() + dx,
-                    rect.top() + dy,
-                    rect.width() - dx,
-                    rect.height() - dy,
+                    min(fixed_tl_item.x(), active_br_item.x()),
+                    min(fixed_tl_item.y(), active_br_item.y()),
+                    abs(active_br_item.x() - fixed_tl_item.x()),
+                    abs(active_br_item.y() - fixed_tl_item.y())
                 )
-            elif self.resize_pos == "bottom_right":
-                # 右下角调整：只改变大小
+                
+            elif self.resize_pos == "top_left":
+                # 左上角拉伸，右下角固定
+                active_tl_item = current_item_pos
+                fixed_br_item = self.resize_fixed_corner_item
+                
+                # 构造新矩形
                 new_rect = QRectF(
-                    rect.left(), rect.top(), rect.width() + dx, rect.height() + dy
+                    min(active_tl_item.x(), fixed_br_item.x()),
+                    min(active_tl_item.y(), fixed_br_item.y()),
+                    abs(fixed_br_item.x() - active_tl_item.x()),
+                    abs(fixed_br_item.y() - active_tl_item.y())
                 )
+            else:
+                return
 
             # 确保矩形不会太小
             if new_rect.width() > 10 and new_rect.height() > 10:
@@ -294,7 +469,8 @@ class ResizableRectItem(QGraphicsRectItem):
                 self.setRect(new_rect)
                 self.update_handles()
 
-                # 如果属于分组，更新分组框
+                # 在拉伸过程中不要重复应用变换，避免坐标系混淆。
+                # 仅更新分组边界并通知视图，最终在 mouseReleaseEvent 中统一应用变换。
                 if hasattr(self, "group_item") and self.group_item:
                     self.group_item.update_bounds()
 
@@ -302,18 +478,31 @@ class ResizableRectItem(QGraphicsRectItem):
                 self.prepareGeometryChange()
 
         elif self._moving:
-            # 计算场景坐标的偏移并转换到项的本地坐标系
-            start_scene = self._move_start_scene_pos
-            current_scene = event.scenePos()
-            local_start = self.mapFromScene(start_scene)
-            local_current = self.mapFromScene(current_scene)
-            dx = local_current.x() - local_start.x()
-            dy = local_current.y() - local_start.y()
-
+            # 直接基于起始位置计算偏移（避免 sceneBoundingRect 动态变化的问题）
+            # 计算鼠标在场景坐标中的偏移量
+            delta_x = event.scenePos().x() - self._move_start_scene_pos.x()
+            delta_y = event.scenePos().y() - self._move_start_scene_pos.y()
+            
+            # 计算新的场景坐标位置
+            new_scene_pos_x = self._move_start_scene_rect_topLeft.x() + delta_x
+            new_scene_pos_y = self._move_start_scene_rect_topLeft.y() + delta_y
+            
+            # 转换回项坐标系
+            new_pos_item = self.mapFromScene(QPointF(new_scene_pos_x, new_scene_pos_y))
+            
+            # 根据起始矩形大小，设置新的矩形位置
             rect = self._move_start_rect
-            # 平移矩形
-            new_rect = QRectF(rect.x() + dx, rect.y() + dy, rect.width(), rect.height())
-            self.setRect(new_rect)
+            self.setRect(QRectF(
+                new_pos_item.x(),
+                new_pos_item.y(),
+                rect.width(),
+                rect.height()
+            ))
+            
+            # 平移后如果有旋转角度，需要重新应用旋转变换以保持旋转中心的物理位置不变
+            if self.angle != 0.0:
+                self._apply_rotation_transform()
+            
             self.update_handles()
             if hasattr(self, "group_item") and self.group_item:
                 self.group_item.update_bounds()
@@ -337,8 +526,69 @@ class ResizableRectItem(QGraphicsRectItem):
 
     def mouseReleaseEvent(self, event) -> None:
         """处理鼠标释放事件。"""
-        if self.resizing:
+        if self.rotating:
+            self.rotating = False
+            # 触发一次坐标/状态更新
+            try:
+                scene = self.scene()
+                if scene:
+                    views = scene.views()
+                    if views:
+                        view = views[0]
+                        if hasattr(view, "set_modified"):
+                            view.set_modified(True)
+                        if hasattr(view, "update_property_coords"):
+                            view.update_property_coords()
+            except Exception:
+                pass
+            # 恢复光标状态
+            self.update_cursor(event.scenePos())
+            event.accept()
+        elif self.resizing:
             self.resizing = False
+            # 在拉伸结束后统一应用旋转变换（如果存在角度），并对齐固定角到原始场景坐标
+            try:
+                # 记录原始固定角在场景中的期望位置
+                fixed_scene = getattr(self, "resize_fixed_corner_scene", None)
+                fixed_item = getattr(self, "resize_fixed_corner_item", None)
+
+                # 先应用旋转变换（基于当前 angle 和新的 rect）
+                if self.angle != 0.0:
+                    self._apply_rotation_transform()
+
+                # 如果我们有固定角的场景期望位置，则计算偏移并移动项以对齐
+                if fixed_scene is not None and fixed_item is not None:
+                    try:
+                        # 当前位置下固定角的实际场景坐标
+                        actual_scene = self.mapToScene(fixed_item)
+                        dx = fixed_scene.x() - actual_scene.x()
+                        dy = fixed_scene.y() - actual_scene.y()
+                        if abs(dx) > 1e-6 or abs(dy) > 1e-6:
+                            # 将项在场景中移动该偏移量
+                            pos = self.pos()
+                            self.setPos(QPointF(pos.x() + dx, pos.y() + dy))
+                    except Exception:
+                        pass
+
+            except Exception:
+                pass
+
+            # 更新分组边界并通知视图
+            try:
+                if hasattr(self, "group_item") and self.group_item:
+                    self.group_item.update_bounds()
+                scene = self.scene()
+                if scene:
+                    views = scene.views()
+                    if views:
+                        view = views[0]
+                        if hasattr(view, "set_modified"):
+                            view.set_modified(True)
+                        if hasattr(view, "update_property_coords"):
+                            view.update_property_coords()
+            except Exception:
+                pass
+
             # 鼠标释放后，需要重新检查悬停位置来设置正确的光标
             self.update_cursor(event.scenePos())
             event.accept()
@@ -366,8 +616,14 @@ class ResizableRectItem(QGraphicsRectItem):
 
     def update_cursor(self, scene_pos: QPointF) -> None:
         """根据鼠标位置更新光标。"""
-        # 检查是否在句柄上（仅在选中状态下）
+        # 检查是否在旋转按钮上（仅在选中状态下）
         if self.isSelected():
+            if self.contains_rotate_handle(scene_pos):
+                # 旋转光标
+                self.setCursor(Qt.ClosedHandCursor)
+                return
+
+            # 检查是否在调整大小的句柄上
             handle_pos = self.contains_handle(scene_pos)
             if handle_pos:
                 # 如果在句柄上，设置为调整大小光标
@@ -401,13 +657,25 @@ class ResizableRectItem(QGraphicsRectItem):
         self.setCursor(Qt.ArrowCursor)
         super().hoverLeaveEvent(event)
 
+    def _apply_rotation_transform(self) -> None:
+        """应用旋转变换到项。"""
+        rect = self.rect()
+        center = QPointF(rect.x() + rect.width() / 2, rect.y() + rect.height() / 2)
+
+        transform = QTransform()
+        transform.translate(center.x(), center.y())
+        transform.rotate(self.angle)
+        transform.translate(-center.x(), -center.y())
+
+        self.setTransform(transform)
+
     def to_dict(self) -> dict:
         """转换为字典用于JSON序列化（LabelMe shapes 条目）。"""
         rect = self.rect()
         x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
         attrs = self.attributes.copy() if self.attributes else {}
         # LabelMe rectangle: use two points [top-left, bottom-right]
-        return {
+        result = {
             "label": self.label,
             "points": [[x, y], [x + w, y + h]],
             "group_id": self.group_id,
@@ -415,6 +683,10 @@ class ResizableRectItem(QGraphicsRectItem):
             "attributes": attrs,
             "flags": {},
         }
+        # 如果有旋转角度，添加 angle 字段
+        if self.angle != 0.0:
+            result["angle"] = round(self.angle, 2)
+        return result
 
     @classmethod
     def from_dict(cls, data: dict, scene: Optional[Any] = None) -> Optional["ResizableRectItem"]:
@@ -444,5 +716,13 @@ class ResizableRectItem(QGraphicsRectItem):
         item.attributes = data.get("attributes", None)
         if item.attributes is None:
             item.attributes = data.get("flags", {}) or {}
+
+        # 恢复旋转角度
+        if "angle" in data:
+            try:
+                item.angle = float(data["angle"]) % 360.0
+                item._apply_rotation_transform()
+            except Exception:
+                pass
 
         return item
