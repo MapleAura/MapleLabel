@@ -32,6 +32,47 @@ class PolygonVertex(QGraphicsEllipseItem):
         except Exception:
             pass
 
+        # 撤销支持：记录移动起点
+        self._undo_move_start_pos = None
+
+    def _get_undo_manager(self):
+        """尝试从视图/主窗口获取撤销管理器。"""
+        try:
+            scene = self.scene()
+            if not scene:
+                return None
+            views = scene.views()
+            if not views:
+                return None
+            view = views[0]
+            win = view.window() if hasattr(view, "window") else None
+            if win is not None and hasattr(win, "undo_manager"):
+                return win.undo_manager
+        except Exception:
+            return None
+        return None
+
+    def _apply_pos(self, pos: QPointF) -> None:
+        """应用位置（用于撤销/重做）。"""
+        try:
+            self.setPos(QPointF(pos))
+        except Exception:
+            self.setPos(pos)
+
+        if self.parent_polygon:
+            self.parent_polygon.update_polygon_shape()
+
+        try:
+            scene = self.scene()
+            if scene:
+                views = scene.views()
+                if views:
+                    view = views[0]
+                    if hasattr(view, "update_property_coords"):
+                        view.update_property_coords()
+        except Exception:
+            pass
+
     def itemChange(self, change, value):
         """顶点位置变化时通知多边形更新"""
         if change == QGraphicsEllipseItem.ItemPositionChange and self.parent_polygon:
@@ -39,6 +80,35 @@ class PolygonVertex(QGraphicsEllipseItem):
             new_pos = value
             self.parent_polygon.update_vertex_position(self, new_pos)
         return super().itemChange(change, value)
+
+    def mousePressEvent(self, event) -> None:
+        """记录移动起点。"""
+        self._undo_move_start_pos = QPointF(self.pos())
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        """记录移动撤销。"""
+        super().mouseReleaseEvent(event)
+        try:
+            old_pos = self._undo_move_start_pos
+            new_pos = self.pos()
+            if old_pos is not None:
+                dx = abs(old_pos.x() - new_pos.x())
+                dy = abs(old_pos.y() - new_pos.y())
+                if dx > 1e-6 or dy > 1e-6:
+                    um = self._get_undo_manager()
+                    if um:
+                        def _undo():
+                            self._apply_pos(old_pos)
+
+                        def _redo():
+                            self._apply_pos(new_pos)
+
+                        um.push_action(_undo, _redo, name="move_polygon_vertex")
+        except Exception:
+            pass
+        finally:
+            self._undo_move_start_pos = None
 
 
 class PolygonItem(QGraphicsPolygonItem):

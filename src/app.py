@@ -1640,8 +1640,10 @@ class MapleLabelWindow(QMainWindow):
             angle_spinbox.setValue(item.angle)
             angle_spinbox.setSuffix("°")
 
-            def on_angle_changed(value):
-                item.angle = value % 360.0
+            angle_editing = {"active": False, "start": item.angle}
+
+            def apply_angle(val):
+                item.angle = val % 360.0
                 item._apply_rotation_transform()
                 item.update_handles()
                 # 如果属于分组，更新分组框
@@ -1650,7 +1652,35 @@ class MapleLabelWindow(QMainWindow):
                 self.canvas.set_modified(True)
                 self.canvas.update()
 
+            def on_angle_changed(value):
+                if not angle_editing["active"]:
+                    angle_editing["active"] = True
+                    angle_editing["start"] = item.angle
+                apply_angle(value)
+
+            def on_angle_editing_finished():
+                if not angle_editing["active"]:
+                    return
+                angle_editing["active"] = False
+                start = angle_editing.get("start", item.angle)
+                end = item.angle
+                if abs(end - start) <= 1e-6:
+                    return
+                try:
+                    um = getattr(self, "undo_manager", None)
+                    if um:
+                        def _undo():
+                            apply_angle(start)
+
+                        def _redo():
+                            apply_angle(end)
+
+                        um.push_action(_undo, _redo, name="rotate_rect")
+                except Exception:
+                    pass
+
             angle_spinbox.valueChanged.connect(on_angle_changed)
+            angle_spinbox.editingFinished.connect(on_angle_editing_finished)
             self.property_form.addRow("旋转角度", angle_spinbox)
             self._current_angle_spinbox = angle_spinbox
 

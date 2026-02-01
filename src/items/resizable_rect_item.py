@@ -149,6 +149,9 @@ class ResizableRectItem(QGraphicsRectItem):
         self._moving = False
         self._move_start_scene_pos = None
         self._move_start_rect = None
+        # 撤销支持：记录移动/旋转起始状态
+        self._undo_move_start_rect = None
+        self._undo_rotate_start_angle = None
 
     def apply_group_color(self, color: QColor) -> None:
         """Apply a group color to the rectangle (border + translucent fill)."""
@@ -193,6 +196,59 @@ class ResizableRectItem(QGraphicsRectItem):
         rotate_x = rect.x() + rect.width() / 2
         rotate_y = rect.y() - 12  # 距离顶部 12 像素，更靠近矩形框
         self.rotate_handle.setPos(rotate_x, rotate_y)
+
+    def _get_undo_manager(self):
+        """尝试从视图/主窗口获取撤销管理器。"""
+        try:
+            scene = self.scene()
+            if not scene:
+                return None
+            views = scene.views()
+            if not views:
+                return None
+            view = views[0]
+            win = view.window() if hasattr(view, "window") else None
+            if win is not None and hasattr(win, "undo_manager"):
+                return win.undo_manager
+        except Exception:
+            return None
+        return None
+
+    def _apply_state(self, rect=None, angle=None) -> None:
+        """应用矩形状态（用于撤销/重做）。"""
+        if rect is not None:
+            self.setRect(QRectF(rect))
+        if angle is not None:
+            try:
+                self.angle = float(angle) % 360.0
+            except Exception:
+                self.angle = 0.0
+
+        # 根据当前角度刷新变换
+        self._apply_rotation_transform()
+        self.update_handles()
+
+        if hasattr(self, "group_item") and self.group_item:
+            self.group_item.update_bounds()
+
+        try:
+            scene = self.scene()
+            if scene:
+                views = scene.views()
+                if views:
+                    view = views[0]
+                    if hasattr(view, "update_property_coords"):
+                        view.update_property_coords()
+        except Exception:
+            pass
+
+    def _rect_equals(self, a: QRectF, b: QRectF, eps: float = 1e-6) -> bool:
+        return (
+            abs(a.x() - b.x()) <= eps
+            and abs(a.y() - b.y()) <= eps
+            and abs(a.width() - b.width()) <= eps
+            and abs(a.height() - b.height()) <= eps
+        )
 
     def itemChange(self, change: Any, value: Any) -> Any:
         """处理项变化。
@@ -338,6 +394,7 @@ class ResizableRectItem(QGraphicsRectItem):
                 self.rotating = True
                 self.rotate_start_scene_pos = event.scenePos()
                 self.rotate_start_angle = self.angle
+                self._undo_rotate_start_angle = self.angle
                 # 不记录旋转中心，每次旋转时实时计算
                 self.setCursor(Qt.OpenHandCursor)
                 event.accept()
@@ -385,6 +442,7 @@ class ResizableRectItem(QGraphicsRectItem):
         self._moving = True
         self._move_start_scene_pos = event.scenePos()
         self._move_start_rect = self.rect()
+        self._undo_move_start_rect = QRectF(self._move_start_rect)
         # 记录平移开始时的场景坐标位置（用于准确计算偏移）
         self._move_start_scene_rect_topLeft = self.mapToScene(self._move_start_rect.topLeft())
         self.setCursor(Qt.SizeAllCursor)
@@ -532,6 +590,22 @@ class ResizableRectItem(QGraphicsRectItem):
         """处理鼠标释放事件。"""
         if self.rotating:
             self.rotating = False
+            # 记录旋转撤销
+            try:
+                old_angle = getattr(self, "_undo_rotate_start_angle", None)
+                new_angle = self.angle
+                if old_angle is not None and abs(new_angle - old_angle) > 1e-6:
+                    um = self._get_undo_manager()
+                    if um:
+                        def _undo():
+                            self._apply_state(angle=old_angle)
+
+                        def _redo():
+                            self._apply_state(angle=new_angle)
+
+                        um.push_action(_undo, _redo, name="rotate_rect")
+            except Exception:
+                pass
             # 触发一次坐标/状态更新
             try:
                 scene = self.scene()
@@ -599,6 +673,22 @@ class ResizableRectItem(QGraphicsRectItem):
         else:
             if self._moving:
                 self._moving = False
+                # 记录移动撤销
+                try:
+                    old_rect = getattr(self, "_undo_move_start_rect", None)
+                    new_rect = self.rect()
+                    if old_rect is not None and not self._rect_equals(old_rect, new_rect):
+                        um = self._get_undo_manager()
+                        if um:
+                            def _undo():
+                                self._apply_state(rect=old_rect)
+
+                            def _redo():
+                                self._apply_state(rect=new_rect)
+
+                            um.push_action(_undo, _redo, name="move_rect")
+                except Exception:
+                    pass
                 # 触发一次坐标/状态更新
                 try:
                     scene = self.scene()
