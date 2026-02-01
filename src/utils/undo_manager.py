@@ -188,3 +188,8 @@ class UndoRedoManager:
         # perform removal now
         do_remove()
         self.push_action(undo_add, do_remove, name)
+
+    # 添加删除操作到撤销管理器
+    def delete_action(self, image_file, annotation_file):
+        # 记录删除操作
+        self.actions.append(('delete', image_file, annotation_file))

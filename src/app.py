@@ -7,6 +7,8 @@
 
 import json
 import os
+# import keyboard
+
 from typing import Any, Dict, List, Optional, Tuple
 
 from PySide6.QtCore import (
@@ -613,6 +615,10 @@ class MapleLabelWindow(QMainWindow):
         self.autosave_shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
         self.autosave_shortcut.activated.connect(self.auto_save)
 
+        # 删除文件快捷键
+        self.delete_file_shortcut = QShortcut(QKeySequence("Shift+E"), self)
+        self.delete_file_shortcut.activated.connect(self.delete_current_file)
+
         self.fit_view_shortcut = QShortcut(Qt.Key_F, self)
         self.fit_view_shortcut.activated.connect(lambda: self.canvas.fit_to_view())
 
@@ -992,6 +998,68 @@ class MapleLabelWindow(QMainWindow):
             self.canvas.clear_annotations()
             self.canvas.set_modified(True)
 
+    def delete_current_file(self) -> None:
+        """删除当前图像文件及其对应的标注文件（不提示确认）。"""
+        if not self.current_image:
+            self.status_bar.showMessage("没有打开的图像文件 | MapleLabel2.0")
+            return
+
+        # 获取当前图像文件路径和对应的标注文件路径
+        image_path = self.current_image
+        json_path = os.path.splitext(image_path)[0] + ".json"
+        temp_name = f"temp_{os.path.basename(image_path)}.json"
+        temp_path = os.path.join(self.temp_dir, temp_name)
+
+        # 记录当前索引，用于删除后加载下一张
+        current_index = self.current_image_index
+
+        try:
+            # 删除图像文件
+            if os.path.exists(image_path):
+                os.remove(image_path)
+            
+            # 删除对应的标注文件
+            if os.path.exists(json_path):
+                os.remove(json_path)
+            
+            # 删除临时文件
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+            # 从文件列表中移除
+            if self.current_image_index >= 0 and self.current_image_index < len(self.image_files):
+                file_name = self.image_files[self.current_image_index]
+                self.image_files.remove(file_name)
+                
+                # 从列表控件中移除对应项
+                for i in range(self.file_list.count()):
+                    item = self.file_list.item(i)
+                    if item.data(Qt.UserRole) == image_path:
+                        self.file_list.takeItem(i)
+                        break
+
+            # 加载下一张或上一张图片
+            if self.image_files:
+                # 如果删除的是最后一张，加载新的最后一张
+                if current_index >= len(self.image_files):
+                    current_index = len(self.image_files) - 1
+                
+                self.current_image_index = current_index
+                next_file = os.path.join(self.current_dir, self.image_files[current_index])
+                self.load_image_by_path(next_file)
+                self.select_current_file_in_list()
+                self.status_bar.showMessage(f"已删除文件及标注 | 快捷键: Shift+E | MapleLabel2.0")
+            else:
+                # 没有图片了，清空画布
+                self.current_image = None
+                self.current_image_index = -1
+                self.canvas.scene.clear()
+                self.status_bar.showMessage("已删除最后一张图片 | MapleLabel2.0")
+
+        except Exception as e:
+            QMessageBox.critical(self, "删除失败", f"删除文件时出错: {str(e)}")
+            self.status_bar.showMessage(f"删除失败: {str(e)}")
+
     def create_left_panel(self) -> None:
         """构建左侧工具面板。"""
         self.left_panel = CollapsiblePanel("工具", position="left")
@@ -1076,6 +1144,13 @@ class MapleLabelWindow(QMainWindow):
                 "text": "删除",
                 "icon": "delete",
                 "shortcut": "E",
+                "checkable": False,
+            },
+            {
+                "name": "delete_file",
+                "text": "删除文件",
+                "icon": "delete",
+                "shortcut": "Shift+E",
                 "checkable": False,
             },
             {
@@ -1186,6 +1261,8 @@ class MapleLabelWindow(QMainWindow):
                 btn.clicked.connect(self.ungroup_selected_items)
             elif tool["name"] == "delete":
                 btn.clicked.connect(self.delete_selected)
+            elif tool["name"] == "delete_file":
+                btn.clicked.connect(self.delete_current_file)
             elif tool["name"] == "undo":
                 btn.clicked.connect(self.undo)
             elif tool["name"] == "redo":
@@ -1233,6 +1310,11 @@ class MapleLabelWindow(QMainWindow):
             self.tool_button_group.setExclusive(True)
         elif tool_name == "delete":
             self.delete_selected()
+            self.tool_button_group.setExclusive(False)
+            sender.setChecked(False)
+            self.tool_button_group.setExclusive(True)
+        elif tool_name == "delete_file":
+            self.delete_current_file()
             self.tool_button_group.setExclusive(False)
             sender.setChecked(False)
             self.tool_button_group.setExclusive(True)
