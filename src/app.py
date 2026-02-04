@@ -597,10 +597,10 @@ class MapleLabelWindow(QMainWindow):
         }
 
         # 翻页快捷键
-        self.prev_shortcut = QShortcut(QKeySequence("Alt+Left"), self)
+        self.prev_shortcut = QShortcut(QKeySequence("Left"), self)
         self.prev_shortcut.activated.connect(self.load_prev_image)
 
-        self.next_shortcut = QShortcut(QKeySequence("Alt+Right"), self)
+        self.next_shortcut = QShortcut(QKeySequence("Right"), self)
         self.next_shortcut.activated.connect(self.load_next_image)
 
         # 目录快捷键
@@ -616,7 +616,7 @@ class MapleLabelWindow(QMainWindow):
         self.autosave_shortcut.activated.connect(self.auto_save)
 
         # 删除文件快捷键
-        self.delete_file_shortcut = QShortcut(QKeySequence("Shift+E"), self)
+        self.delete_file_shortcut = QShortcut(QKeySequence("Delete"), self)
         self.delete_file_shortcut.activated.connect(self.delete_current_file)
 
         self.fit_view_shortcut = QShortcut(Qt.Key_F, self)
@@ -938,12 +938,12 @@ class MapleLabelWindow(QMainWindow):
         self.addAction(ungroup_action)
 
         # 上一个图像
-        prev_action = QAction("上一个图像 (Alt+左)", self)
+        prev_action = QAction("上一个图像 (左)", self)
         prev_action.triggered.connect(self.load_prev_image)
         self.addAction(prev_action)
 
         # 下一个图像
-        next_action = QAction("下一个图像 (Alt+右)", self)
+        next_action = QAction("下一个图像 (右)", self)
         next_action.triggered.connect(self.load_next_image)
         self.addAction(next_action)
 
@@ -987,7 +987,7 @@ class MapleLabelWindow(QMainWindow):
             pass
 
         self.canvas.set_modified(True)
-        self.status_bar.showMessage("已删除选中项 | 快捷键: Delete/E | MapleLabel2.0")
+        self.status_bar.showMessage("已删除选中项 | 快捷键: E | MapleLabel2.0")
 
     def clear_annotations(self):
         """清除所有标注"""
