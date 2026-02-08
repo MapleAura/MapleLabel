@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 import onnxruntime as ort
-# from ultralytics import YOLO
+from ultralytics import YOLO
 
 from src.utils.registry import register_module
 

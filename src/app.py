@@ -636,6 +636,35 @@ class MapleLabelWindow(QMainWindow):
                 lambda t=tool_name: self.activate_tool_by_shortcut(t)
             )
 
+    def _find_label_json(self, dir_path: str) -> Optional[str]:
+        """
+        在指定目录及其上级目录中查找 label.json 文件。
+        
+        Args:
+            dir_path: 起始目录路径
+            
+        Returns:
+            找到的 label.json 的完整路径，如果未找到则返回 None
+        """
+        current_path = os.path.abspath(dir_path)
+        
+        # 最多向上查找3层（当前目录、上级、上上级）
+        for _ in range(3):
+            label_json_path = os.path.join(current_path, "label.json")
+            if os.path.exists(label_json_path) and os.path.isfile(label_json_path):
+                return label_json_path
+            
+            # 获取上级目录
+            parent_path = os.path.dirname(current_path)
+            
+            # 如果已经到达根目录，停止查找
+            if parent_path == current_path:
+                break
+                
+            current_path = parent_path
+        
+        return None
+
     def create_ai_panel(self) -> None:
         """创建 AI 悬浮面板，内容暂为空占位。"""
         self.ai_panel = QWidget(self, Qt.Tool)
@@ -1350,9 +1379,9 @@ class MapleLabelWindow(QMainWindow):
 
         self.image_files.sort()
 
-        # 尝试读取目录下的 label.json
-        label_json_path = os.path.join(dir_path, "label.json")
-        if os.path.exists(label_json_path):
+        # 尝试读取目录下的 label.json，如果不存在则向上级目录查找
+        label_json_path = self._find_label_json(dir_path)
+        if label_json_path:
             try:
                 with open(label_json_path, "r", encoding="utf-8") as f:
                     self.label_config = json.load(f).get("shapes", {})
